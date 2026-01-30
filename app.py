@@ -1,47 +1,115 @@
+import os
+import sys
+import site
+
+# --- DLL FIX START ---
+# 1. Allow multiple OpenMP runtimes
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+def register_nvidia_dlls():
+    """
+    Actively hunts for the missing 'cublas64_12.dll' in site-packages
+    and adds it to the DLL search path.
+    """
+    if sys.platform != "win32":
+        return
+
+    # Get all possible site-packages folders (system and virtualenv)
+    possible_paths = site.getsitepackages()
+    
+    # Also add the local user site-packages just in case
+    try:
+        possible_paths.append(site.getusersitepackages())
+    except:
+        pass
+
+    dll_found = False
+    
+    for base_path in possible_paths:
+        # We look for nvidia/cublas/bin and nvidia/cudnn/bin
+        cublas_bin = os.path.join(base_path, "nvidia", "cublas", "bin")
+        cudnn_bin = os.path.join(base_path, "nvidia", "cudnn", "bin")
+        
+        # check if the specific problematic file exists here
+        if os.path.exists(os.path.join(cublas_bin, "cublas64_12.dll")):
+            print(f"DEBUG: Found NVIDIA DLLs at: {cublas_bin}")
+            
+            # Add to System PATH (Critical for CTranslate2)
+            os.environ["PATH"] += os.pathsep + cublas_bin
+            os.environ["PATH"] += os.pathsep + cudnn_bin
+            
+            # Add to Python DLL Directory
+            if hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(cublas_bin)
+                    os.add_dll_directory(cudnn_bin)
+                except Exception as e:
+                    print(f"Warning: Failed to add_dll_directory: {e}")
+            
+            dll_found = True
+            break # Stop looking once found
+            
+    if not dll_found:
+        print("WARNING: Could not locate nvidia-cublas-cu12 automatically.")
+        print("You may need to run: pip install nvidia-cublas-cu12 nvidia-cudnn-cu12")
+
+# Run the fix immediately
+register_nvidia_dlls()
+# --- DLL FIX END ---
+
 import streamlit as st
-import torch
-import librosa
-import numpy as np
-from faster_whisper import WhisperModel
+# Import our custom modules
+from src.ui.recorder import record_audio
+from src.backend.audio_processor import AudioProcessor
 
 # Page Config
-st.set_page_config(page_title="AI Coach - System Check", page_icon="⚙️")
+st.set_page_config(
+    page_title="AI Interview Coach", 
+    page_icon="🎙️",
+    layout="centered"
+)
 
-st.title("⚙️ AI Interview Coach: System Diagnostic")
+def main():
+    st.title("🎙️ AI Interview Coach")
+    st.caption("Phase 2: Audio Pipeline Prototype")
 
-# 1. Check GPU Availability (Crucial for Latency)
-st.subheader("1. Hardware Acceleration")
-if torch.cuda.is_available():
-    gpu_name = torch.cuda.get_device_name(0)
-    st.success(f"GPU Detected: {gpu_name}")
-    st.info(f"CUDA Version: {torch.version.cuda}")
-else:
-    st.error("No GPU Detected. System will run slowly on CPU.")
+    # Initialize the processor
+    processor = AudioProcessor()
 
-# 2. Check Libraries
-st.subheader("2. Dependency Check")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.write(f"**Librosa:** {librosa.__version__}")
-with col2:
-    st.write(f"**NumPy:** {np.__version__}")
-with col3:
-    st.write(f"**Torch:** {torch.__version__}")
+    # --- 1. Audio Recording Section ---
+    st.divider()
+    st.subheader("1. Record Your Answer")
+    
+    # Call the recorder UI function
+    audio_path = record_audio()
 
-# 3. Test Model Loading (Simulated)
-st.subheader("3. Model Engine Test")
-if st.button("Initialize Whisper Engine"):
-    try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if torch.cuda.is_available() else "int8"
+    # --- 2. Processing Section ---
+    if audio_path:
+        st.success(f"Audio captured! Saved securely to local disk.")
         
-        with st.spinner(f"Loading Faster-Whisper on {device}..."):
-            # We assume a small model for the test to be quick, or we can use 'tiny' just for a health check
-            model = WhisperModel("tiny", device=device, compute_type=compute_type)
-        
-        st.success(f"Whisper Engine initialized successfully on {device}!")
-    except Exception as e:
-        st.error(f"Failed to initialize Whisper: {e}")
+        # Display audio player for verification
+        st.audio(audio_path)
 
-st.divider()
-st.caption("Phase 1: Environment Setup Complete")
+        st.divider()
+        st.subheader("2. AI Transcription (Local GPU)")
+        
+        if st.button("Analyze Audio", type="primary"):
+            with st.spinner("Processing on RTX 3090..."):
+                # Call the backend to transcribe
+                try:
+                    transcript, duration = processor.transcribe(audio_path)
+                    
+                    # Display Result
+                    st.markdown("### 📝 Transcript")
+                    st.success(transcript)
+                    st.caption(f"Processed in {duration:.2f} seconds")
+                    
+                except RuntimeError as e:
+                    st.error("Runtime Error during transcription.")
+                    st.error(f"Details: {e}")
+                    st.info("Tip: If this is a DLL error, check your terminal for DEBUG messages.")
+
+if __name__ == "__main__":
+    # Ensure temp directory exists
+    os.makedirs("temp_data", exist_ok=True)
+    main()
