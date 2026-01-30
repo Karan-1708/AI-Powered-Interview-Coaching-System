@@ -10,33 +10,48 @@ class AudioProcessor:
     @st.cache_resource
     def load_model(_self):
         """
-        Loads the Whisper model. Cached by Streamlit to avoid reloading on every interaction.
+        Loads the Whisper model with error handling.
         """
-        # REMOVED: st.toast line to prevent CacheReplayClosureError
-        
-        # 'medium.en' is a great balance of speed/accuracy for the RTX 3090.
-        model = WhisperModel("medium.en", device="cuda", compute_type="float16")
-        return model
+        try:
+            # 'medium.en' is a great balance of speed/accuracy for the RTX 3090.
+            model = WhisperModel("medium.en", device="cuda", compute_type="float16")
+            return model
+        except Exception as e:
+            # We raise the error so the UI can catch it and display a nice message
+            raise RuntimeError(f"Failed to load AI Model: {str(e)}")
 
     def transcribe(self, audio_path):
         """
-        Transcribes the audio file at the given path.
+        Transcribes the audio file.
+        Returns: (transcript, processing_time, error_message)
         """
+        # 1. Validation Check
         if not os.path.exists(audio_path):
-            return "Error: Audio file not found.", 0
+            return None, 0, "Error: Audio file not found on disk."
 
         start_time = time.time()
         
-        # Load model (retrieved from cache if already loaded)
-        model = self.load_model()
-        
-        # Beam size 5 provides better accuracy than default
-        segments, info = model.transcribe(audio_path, beam_size=5)
-        
-        full_text = ""
-        for segment in segments:
-            full_text += segment.text + " "
+        try:
+            # 2. Load Model (Safe Load)
+            model = self.load_model()
             
-        processing_time = time.time() - start_time
+            # 3. Transcribe
+            # Beam size 5 provides better accuracy
+            segments, info = model.transcribe(audio_path, beam_size=5)
+            
+            full_text = ""
+            for segment in segments:
+                full_text += segment.text + " "
+                
+            processing_time = time.time() - start_time
+            
+            # Success: Return text, time, and NO error
+            return full_text.strip(), processing_time, None
+
+        except RuntimeError as e:
+            # Often related to CUDA/GPU running out of memory
+            return None, 0, f"GPU Error: {str(e)}"
         
-        return full_text.strip(), processing_time
+        except Exception as e:
+            # Generic catch-all
+            return None, 0, f"Unexpected Transcription Error: {str(e)}"
