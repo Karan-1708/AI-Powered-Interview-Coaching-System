@@ -1,57 +1,56 @@
 import streamlit as st
 from faster_whisper import WhisperModel
+from src.backend.scorer import AcousticScorer
 import os
 import time
 
 class AudioProcessor:
     def __init__(self):
-        pass
+        self.scorer = AcousticScorer()
 
     @st.cache_resource
     def load_model(_self):
-        """
-        Loads the Whisper model with error handling.
-        """
         try:
-            # 'medium.en' is a great balance of speed/accuracy for the RTX 3090.
             model = WhisperModel("medium.en", device="cuda", compute_type="float16")
             return model
         except Exception as e:
-            # We raise the error so the UI can catch it and display a nice message
             raise RuntimeError(f"Failed to load AI Model: {str(e)}")
 
-    def transcribe(self, audio_path):
+    def process_interview(self, audio_path, difficulty="Intermediate"):
         """
-        Transcribes the audio file.
-        Returns: (transcript, processing_time, error_message)
+        Runs pipeline with specified difficulty level.
         """
-        # 1. Validation Check
         if not os.path.exists(audio_path):
-            return None, 0, "Error: Audio file not found on disk."
+            return None, None, 0, "Error: Audio file not found."
 
         start_time = time.time()
         
         try:
-            # 2. Load Model (Safe Load)
             model = self.load_model()
             
-            # 3. Transcribe
-            # Beam size 5 provides better accuracy
-            segments, info = model.transcribe(audio_path, beam_size=5)
+            # TRICK: We intentionally use "..." and stutters in the prompt
+            # so the model knows it's okay to output them.
+            segments, info = model.transcribe(
+                audio_path, 
+                beam_size=5,
+                initial_prompt="Umm, I-I think... well, actually... so your... it will delete."
+            )
             
             full_text = ""
             for segment in segments:
                 full_text += segment.text + " "
-                
-            processing_time = time.time() - start_time
+            full_text = full_text.strip()
+
+            # Analyze with Difficulty
+            metrics = self.scorer.analyze_audio(audio_path, full_text, difficulty=difficulty)
             
-            # Success: Return text, time, and NO error
-            return full_text.strip(), processing_time, None
+            if metrics.get("error"):
+                return full_text, None, 0, metrics["error"]
+
+            total_time = time.time() - start_time
+            return full_text, metrics, total_time, None
 
         except RuntimeError as e:
-            # Often related to CUDA/GPU running out of memory
-            return None, 0, f"GPU Error: {str(e)}"
-        
+            return None, None, 0, f"GPU Error: {str(e)}"
         except Exception as e:
-            # Generic catch-all
-            return None, 0, f"Unexpected Transcription Error: {str(e)}"
+            return None, None, 0, f"Pipeline Error: {str(e)}"
