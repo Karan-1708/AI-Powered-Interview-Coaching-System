@@ -1,0 +1,20 @@
+# --- Core AI Engine ---
+faster-whisper==1.0.3
+torch>=2.0.0
+ctranslate2>=4.0.0
+
+# --- UI & Frontend ---
+streamlit>=1.30.0
+watchdog
+
+# --- Audio Analysis & Signal Processing ---
+librosa>=0.10.1
+soundfile>=0.12.1
+numpy>=1.24.0
+
+# --- System & Hardware Monitoring ---
+psutil>=5.9.0
+py-cpuinfo>=9.0.0
+
+# --- Future Proofing ---
+ollama

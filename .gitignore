@@ -1,6 +1,7 @@
 # Python / Virtual Envs
 __pycache__/
 *.py[cod]
+*.pyc
 .venv/
 env/
 venv/
@@ -12,7 +13,7 @@ venv/
 # Temporary Audio & Data (Privacy Protection)
 *.wav
 *.mp3
-temp_audio/
+temp_data/
 logs/
 
 # IDE Settings

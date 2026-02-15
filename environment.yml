@@ -7,13 +7,15 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - cudatoolkit  # Required for GPU acceleration [cite: 195]
+  - cudatoolkit       # Required for NVIDIA GPU acceleration
+  - pytorch           # Critical: Required for 'import torch' in hardware.py
   - pip:
-    - streamlit
-    - faster-whisper  # Optimized ASR [cite: 98]
-    - ctranslate2     # Inference engine for Whisper [cite: 100]
-    - librosa         # Audio analysis [cite: 102]
-    - numpy
-    - soundfile       # Required by librosa
-    - ollama          # Python client for Ollama [cite: 117]
-    - watchdog        # Useful for Streamlit auto-reload
+    - streamlit       # The UI Framework
+    - faster-whisper  # Optimized AI Transcription (CTranslate2 backend)
+    - librosa         # Audio Analysis (Pitch, Tone, Silence)
+    - soundfile       # Audio loading backend for Librosa
+    - numpy           # Math operations for Tone Analysis
+    - psutil          # System Resource Monitoring (RAM/CPU)
+    - py-cpuinfo      # CPU Brand Detection (Intel vs Apple vs AMD)
+    - watchdog        # Development: Auto-reloads app on code change
+    - ollama          # Upcoming: For Phase 4 (The Brain)
