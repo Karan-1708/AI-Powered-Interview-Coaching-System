@@ -1,5 +1,5 @@
-import librosa
-import numpy as np
+import librosa  # pyright: ignore[reportMissingImports]
+import numpy as np  # pyright: ignore[reportMissingImports]
 import re
 
 class AcousticScorer:

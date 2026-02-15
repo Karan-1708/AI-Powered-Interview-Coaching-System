@@ -1,5 +1,5 @@
-import streamlit as st
-from faster_whisper import WhisperModel
+import streamlit as st  # pyright: ignore[reportMissingImports]
+from faster_whisper import WhisperModel  # pyright: ignore[reportMissingImports]
 from src.backend.scorer import AcousticScorer
 from src.backend.hardware import HardwareInfo
 from src.utils.diagnostics import get_logger

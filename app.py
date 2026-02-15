@@ -1,8 +1,9 @@
 import os
 import platform
 import shutil
-import streamlit as st
+import streamlit as st  # pyright: ignore[reportMissingImports]
 import logging
+from src.ui.dashboard import render_dashboard
 
 # --- 1. GLOBAL CRASH PROTECTION ---
 if platform.system() == "Windows":
@@ -142,7 +143,7 @@ def main():
             
             if audio_path:
                 st.audio(audio_path)
-                btn_label = f"Analyze ({selected_tier})"
+                btn_label = f"Analyze"
                 
                 if st.button(btn_label, type="primary", use_container_width=True):
                     with st.spinner("Analyzing..."):
@@ -156,26 +157,22 @@ def main():
                     else:
                         st.session_state['results'] = (transcript, metrics, duration)
 
+        # --- RIGHT COLUMN: Results ---
         with col2:
-            st.subheader("2. Results")
             if 'results' in st.session_state:
+                # Unpack the data
                 transcript, metrics, duration = st.session_state['results']
-                feedback = metrics["feedback"]
                 
-                m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Tone", metrics["tone_label"], feedback["tone"], delta_color=feedback["tone_status"])
-                m2.metric("Speed", f"{metrics['wpm']}", feedback["wpm"], delta_color=feedback["wpm_status"])
-                m3.metric("Pauses", f"{metrics['pause_count']}", feedback["pause"], delta_color=feedback["pause_status"])
-                m4.metric("Fillers", f"{metrics['filler_count']}", feedback["filler"], delta_color=feedback["filler_status"])
-                m5.metric("Blunders", f"{metrics['blunder_count']}", feedback["blunder"], delta_color=feedback["blunder_status"])
-                
-                st.divider()
-                if "density_tip" in feedback: st.info(f"💡 **Coach Tip:** {feedback['density_tip']}")
-                
-                st.markdown("### 📝 Transcript")
-                st.write(transcript)
+                # Call the new module to draw everything
+                render_dashboard(
+                    transcript, 
+                    metrics, 
+                    duration, 
+                    selected_mode, 
+                    selected_tier
+                )
             else:
-                st.info("Ready to analyze.")
+                st.info("Ready to analyze. Select settings and record your answer.")
 
     except Exception as e:
         st.error("🚨 An unexpected error occurred.")
