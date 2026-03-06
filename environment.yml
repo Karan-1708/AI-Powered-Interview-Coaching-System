@@ -18,4 +18,6 @@ dependencies:
     - psutil          # System Resource Monitoring (RAM/CPU)
     - py-cpuinfo      # CPU Brand Detection (Intel vs Apple vs AMD)
     - watchdog        # Development: Auto-reloads app on code change
-    - ollama          # Upcoming: For Phase 4 (The Brain)
+    - pandas          # NEW: Required for Session History charts
+    - pyttsx3         # NEW: Required for Offline Text-to-Speech
+    - ollama          # Upcoming: For Phase 2.3 (The Brain)

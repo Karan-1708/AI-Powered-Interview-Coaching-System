@@ -16,10 +16,11 @@ venv/
 temp_data/
 logs/
 
-# IDE Settings
+# IDE & OS Settings
 .vscode/
 .idea/
 .cursorrules
+.DS_Store
 
 # Local Models (Ollama models are stored elsewhere, but just in case)
 models/

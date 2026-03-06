@@ -50,6 +50,11 @@ class AudioProcessor:
         if not os.path.exists(audio_path):
             return None, None, 0, "Error: Audio file not found."
 
+        # --- NEW: Instant Dead Air Check ---
+        is_silent, silence_error = self.check_for_silence(audio_path)
+        if is_silent:
+            return None, None, 0, silence_error
+            
         start_time = time.time()
         
         try:
@@ -80,3 +85,30 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Critical Pipeline Error: {str(e)}")
             return None, None, 0, f"Processing Failed: {str(e)}"
+
+    def check_for_silence(self, audio_path):
+        """
+        Fast pre-check to ensure the audio actually contains speech.
+        Prevents wasting GPU/CPU resources on empty recordings.
+        """
+        import librosa
+        import numpy as np
+        
+        try:
+            # Load audio quickly
+            y, sr = librosa.load(audio_path, sr=16000)
+            
+            # Trim leading/trailing silence (top_db=30 is standard threshold)
+            trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
+            
+            # Calculate duration of actual non-silent audio
+            active_duration = len(trimmed_audio) / sr
+            
+            # If there is less than 1.5 seconds of actual sound, reject it
+            if active_duration < 1.5:
+                return True, "Voice recording error: System was not able to hear you clearly. Please check your microphone."
+                
+            return False, None
+            
+        except Exception as e:
+            return True, f"Error reading audio file: {e}"
