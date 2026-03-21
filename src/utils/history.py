@@ -12,7 +12,9 @@ class HistoryManager:
     def save_session(wpm, fillers, tone, mode):
         """Saves core metrics to a local JSON file for progression tracking."""
         try:
-            os.makedirs("temp_data", exist_ok=True)
+            # Safely ensure the directory exists based on the file path
+            os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+            
             entry = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "wpm": wpm,
@@ -26,6 +28,9 @@ class HistoryManager:
             
             with open(HISTORY_FILE, "w") as f:
                 json.dump(history, f, indent=4)
+                
+            logger.info(f"Session history successfully saved for mode: {mode}")
+            
         except Exception as e:
             logger.error(f"Failed to save history: {e}\n{traceback.format_exc()}")
 
@@ -37,7 +42,7 @@ class HistoryManager:
                 with open(HISTORY_FILE, "r") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                logger.warning("History file corrupted. Creating fresh history.")
+                logger.warning("History file corrupted. Creating a fresh history array.")
                 return []
             except Exception as e:
                 logger.error(f"Error loading history: {e}")

@@ -1,5 +1,4 @@
-import streamlit as st  # pyright: ignore[reportMissingImports]
-from faster_whisper import WhisperModel  # pyright: ignore[reportMissingImports]
+from faster_whisper import WhisperModel
 from src.backend.scorer import AcousticScorer
 from src.backend.hardware import HardwareInfo
 from src.utils.diagnostics import get_logger
@@ -38,10 +37,9 @@ class AudioProcessor:
             error_msg = str(e).lower()
             # Catch Out-Of-Memory (OOM) errors specifically
             if "out of memory" in error_msg or "cudnn" in error_msg:
-                logger.warning(f"CRASH DETECTED: {target_model} failed. Falling back to Eco Mode.")
-                st.toast(f"⚠️ 'Pro' mode failed (Out of VRAM). Switching to Eco Mode...", icon="🛡️")
+                logger.warning(f"CRASH DETECTED (Out of VRAM): {target_model} failed. Falling back to Eco Mode CPU.")
                 
-                # FALLBACK: Force CPU and Tiny Model
+                # FALLBACK: Force CPU and Tiny Model silently on the server
                 return WhisperModel("tiny.en", device="cpu", compute_type="int8")
             else:
                 raise e # Re-raise unknown errors
@@ -50,7 +48,7 @@ class AudioProcessor:
         if not os.path.exists(audio_path):
             return None, None, 0, "Error: Audio file not found."
 
-        # --- NEW: Instant Dead Air Check ---
+        # Instant Dead Air Check
         is_silent, silence_error = self.check_for_silence(audio_path)
         if is_silent:
             return None, None, 0, silence_error
@@ -89,22 +87,15 @@ class AudioProcessor:
     def check_for_silence(self, audio_path):
         """
         Fast pre-check to ensure the audio actually contains speech.
-        Prevents wasting GPU/CPU resources on empty recordings.
         """
         import librosa
         import numpy as np
         
         try:
-            # Load audio quickly
             y, sr = librosa.load(audio_path, sr=16000)
-            
-            # Trim leading/trailing silence (top_db=30 is standard threshold)
             trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
-            
-            # Calculate duration of actual non-silent audio
             active_duration = len(trimmed_audio) / sr
             
-            # If there is less than 1.5 seconds of actual sound, reject it
             if active_duration < 1.5:
                 return True, "Voice recording error: System was not able to hear you clearly. Please check your microphone."
                 

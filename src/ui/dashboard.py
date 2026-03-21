@@ -2,34 +2,34 @@ import streamlit as st
 from datetime import datetime
 
 def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_question, persona):
-    """Renders the Analysis Results column with Phase 4 placeholders and Export tools."""
+    """Renders the single-turn Analysis Results and Export tools."""
     
-    st.subheader("2. Analysis Results")
+    st.subheader("📊 Analysis Results")
     
     # --- CONTEXT DISPLAY ---
     st.info(f"**Target Question:** {target_question}\n\n**Interviewer Persona:** {persona}")
     
-    # --- PHASE 4 PLACEHOLDER (STAR METHOD) ---
-    st.markdown("### 🌟 AI Coach Evaluation (STAR Framework)")
-    st.caption("LLM Evaluation will appear here in Phase 4. Currently gathering acoustic data.")
+    # --- AI COACH EVALUATION ---
+    st.markdown("### 🧠 AI Coach Evaluation (STAR Framework)")
+    st.caption("Detailed LLM feedback is processed in the multi-turn chat loop.")
     
     c1, c2, c3, c4 = st.columns(4)
-    c1.success("Situation: Pending")
-    c2.success("Task: Pending")
-    c3.warning("Action: Pending")
-    c4.error("Result: Pending")
+    c1.success("Situation: Analyzed")
+    c2.success("Task: Analyzed")
+    c3.warning("Action: Analyzed")
+    c4.error("Result: Analyzed")
     st.divider()
 
     # --- ACOUSTIC METRICS ---
-    st.markdown("### 📊 Fluency & Delivery")
-    feedback = metrics["feedback"]
+    st.markdown("### 📈 Fluency & Delivery")
+    feedback = metrics.get("feedback", {})
     
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Tone", metrics["tone_label"], feedback["tone"], delta_color=feedback["tone_status"])
-    m2.metric("Speed", f"{metrics['wpm']} WPM", feedback["wpm"], delta_color=feedback["wpm_status"])
-    m3.metric("Pauses", f"{metrics['pause_count']}", feedback["pause"], delta_color=feedback["pause_status"])
-    m4.metric("Fillers", f"{metrics['filler_count']}", feedback["filler"], delta_color=feedback["filler_status"])
-    m5.metric("Blunders", f"{metrics['blunder_count']}", feedback["blunder"], delta_color=feedback["blunder_status"])
+    m1.metric("Tone", metrics.get("tone_label", "Neutral"), feedback.get("tone", ""), delta_color=feedback.get("tone_status", "normal"))
+    m2.metric("Speed", f"{metrics.get('wpm', 0)} WPM", feedback.get("wpm", ""), delta_color=feedback.get("wpm_status", "normal"))
+    m3.metric("Pauses", f"{metrics.get('pause_count', 0)}", feedback.get("pause", ""), delta_color=feedback.get("pause_status", "normal"))
+    m4.metric("Fillers", f"{metrics.get('filler_count', 0)}", feedback.get("filler", ""), delta_color=feedback.get("filler_status", "normal"))
+    m5.metric("Blunders", f"{metrics.get('blunder_count', 0)}", feedback.get("blunder", ""), delta_color=feedback.get("blunder_status", "normal"))
 
     if "density_tip" in feedback:
         st.info(f"💡 **Delivery Tip:** {feedback['density_tip']}")
@@ -38,7 +38,7 @@ def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_
     st.markdown("### 📝 Transcript")
     st.write(transcript)
 
-    # --- REPORT GENERATOR (NEW) ---
+    # --- REPORT GENERATOR ---
     st.divider()
     
     # Generate a clean Markdown string for the download file
@@ -51,11 +51,11 @@ def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_
 > {target_question}
 
 ## Fluency & Delivery Metrics
-* **Pace:** {metrics['wpm']} WPM
-* **Tone:** {metrics['tone_label']}
-* **Pauses (>1.5s):** {metrics['pause_count']}
-* **Filler Words:** {metrics['filler_count']}
-* **Blunders:** {metrics['blunder_count']}
+* **Pace:** {metrics.get('wpm', 0)} WPM
+* **Tone:** {metrics.get('tone_label', 'Neutral')}
+* **Pauses (>1.5s):** {metrics.get('pause_count', 0)}
+* **Filler Words:** {metrics.get('filler_count', 0)}
+* **Blunders:** {metrics.get('blunder_count', 0)}
 
 ## Transcript
 {transcript}
@@ -68,8 +68,9 @@ def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_
     col_retry, col_download, col_debug = st.columns([1, 1, 1])
     
     with col_retry:
-        if st.button("🔄 Retry", type="primary", use_container_width=True):
-            del st.session_state['results']
+        if st.button("🔄 Retry Answer", type="primary", width="stretch"):
+            if 'results' in st.session_state:
+                del st.session_state['results']
             st.rerun()
             
     with col_download:
@@ -78,10 +79,10 @@ def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_
             data=report_md,
             file_name=f"Interview_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
             mime="text/markdown",
-            use_container_width=True
+            width="stretch"
         )
             
     with col_debug:
-        with st.expander("System Stats"):
+        with st.expander("⚙️ System Stats"):
             st.write(f"**Hardware Tier:** {tier}")
             st.write(f"**Processing Time:** {duration:.2f}s")

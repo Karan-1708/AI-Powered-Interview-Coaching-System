@@ -5,7 +5,7 @@ import platform
 class ResourceMonitor:
     def get_system_usage(self):
         """
-        Returns a dictionary of current system resources.
+        Returns a dictionary of current current system resources.
         """
         stats = {
             "cpu_percent": psutil.cpu_percent(interval=None),

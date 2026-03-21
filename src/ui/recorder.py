@@ -1,6 +1,9 @@
 import streamlit as st
 import time
 import os
+from src.utils.diagnostics import get_logger
+
+logger = get_logger()
 
 def record_audio():
     """
@@ -15,7 +18,6 @@ def record_audio():
             </style>
             """, unsafe_allow_html=True)
 
-        st.info("🎙️ Practice Mode: Click the mic to start recording.")
         audio_value = st.audio_input("Record your answer")
 
         if audio_value:
@@ -27,9 +29,10 @@ def record_audio():
                 os.makedirs("temp_data", exist_ok=True)
             except OSError as e:
                 st.error(f"Failed to create directory: {e}")
+                logger.error(f"Directory creation failed: {e}")
                 return None
 
-            save_path = f"temp_data/recording_{timestamp}.wav"
+            save_path = os.path.join("temp_data", f"recording_{timestamp}.wav")
             
             # Safe File Writing
             try:
@@ -38,17 +41,19 @@ def record_audio():
                 
                 # Verify file size (prevent processing empty files)
                 if os.path.getsize(save_path) == 0:
-                    st.error("Error: Recorded file is empty.")
+                    st.error("Error: Recorded file is empty. Please check your microphone.")
                     return None
                     
                 return save_path
                 
             except IOError as e:
                 st.error(f"Failed to save audio file: {e}")
+                logger.error(f"File save failed: {e}")
                 return None
         
         return None
 
     except Exception as e:
-        st.error(f"critical Recorder Error: {e}")
+        st.error("🚨 Recorder Error: Could not initialize microphone.")
+        logger.critical(f"Recorder UI Crash: {e}")
         return None
