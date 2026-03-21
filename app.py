@@ -6,6 +6,7 @@ import logging
 import pandas as pd
 from src.utils.history import HistoryManager
 from src.ui.dashboard import render_dashboard
+from src.backend.llm_client import LLMClient
 
 # --- 1. GLOBAL CRASH PROTECTION ---
 if platform.system() == "Windows":
@@ -141,6 +142,9 @@ def main():
             if 'custom_questions' not in st.session_state: st.session_state['custom_questions'] = []
             if 'round_info' not in st.session_state: st.session_state['round_info'] = {}
             
+            # Instantiate the LLM Client for the UI
+            llm = LLMClient(tier_string=selected_tier)
+            
             # --- WIZARD STEP 1 & 2: CONTEXT & ROUND SELECTION ---
             with st.expander("🛠️ Interview Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
                 st.markdown("### 1. Define Your Target Role")
@@ -151,14 +155,20 @@ def main():
                 seniority = col_sen.selectbox("Seniority Level", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"])
                 
                 if st.button("Generate Interview Rounds", disabled=not (industry and job_title)):
-                    with st.spinner("🧠 AI is structuring the interview process..."):
-                        st.session_state['rounds'] = [
-                            "Recruiter/Phone Screening (15–30 min)",
-                            "First-Round/Hiring Manager (30–60 min)",
-                            "Technical/In-depth Interview (60–90 min)",
-                            "Panel/Group Interviews (60–90+ min)",
-                            "Final Interview (30–60+ min)"
-                        ]
+                    with st.spinner(f"🧠 {llm.model_name} is structuring the interview process..."):
+                        
+                        # --- REAL LLM CALL ---
+                        prompt = f"You are an expert tech recruiter. List 4 realistic interview rounds for a {seniority} {job_title} in the {industry} industry. Output ONLY a Python-style list of strings, nothing else. Example: ['1. HR Screen', '2. Technical']"
+                        response = llm.generate_response(system_prompt="You output strictly formatted lists.", user_message=prompt)
+                        
+                        try:
+                            # Safely evaluate the string representation of the list
+                            import ast
+                            st.session_state['rounds'] = ast.literal_eval(response)
+                        except:
+                            # Fallback if the LLM messes up the format
+                            st.session_state['rounds'] = [r.strip() for r in response.replace('[', '').replace(']', '').replace("'", "").split(',')]
+                            
                         st.session_state['setup_step'] = 2
                         st.rerun()
 
@@ -168,27 +178,23 @@ def main():
                     selected_round = st.selectbox("Which round are you preparing for?", st.session_state['rounds'])
                     
                     if st.button("Generate Custom Questions", type="primary"):
-                        with st.spinner(f"🧠 AI is writing questions for the {selected_round.split('(')[0]}..."):
+                        with st.spinner(f"🧠 {llm.model_name} is writing questions for the {selected_round}..."):
                             
                             round_type = selected_round.split(" ")[0]
                             
-                            # --- NEW: AUTOMATED MAPPING LOGIC ---
-                            if "Recruiter" in round_type or "First-Round" in round_type:
+                            # AUTOMATED MAPPING LOGIC
+                            if "HR" in round_type or "Screen" in round_type or "First" in round_type:
                                 meaning = "A standard, efficient first-round interview. Focus on high-level experience and culture fit."
                                 rec_mode = "Standard Interview"
                                 rec_persona = "🤝 Friendly HR Recruiter (Focuses on soft skills & culture fit)"
-                            elif "Technical" in round_type:
+                            elif "Technical" in round_type or "System" in round_type or "Code" in round_type:
                                 meaning = "Common for technical assessments. Expect in-depth scrutiny and follow-ups."
                                 rec_mode = "Technical / Complex"
                                 rec_persona = "💼 Strict Technical Lead (Focuses purely on accuracy & efficiency)"
-                            elif "Panel" in round_type:
-                                meaning = "Panel interviews involve multiple stakeholders. High pressure, varied question types."
-                                rec_mode = "Technical / Complex"
+                            else: 
+                                meaning = "Advanced panel or final stage interview. High pressure."
                                 rec_persona = "🔥 Stress Interviewer (Highly critical, looks for flaws & hesitations)"
-                            else: # Final Interview
-                                meaning = "Final interviews evaluate ultimate culture fit, long-term alignment, and leadership."
-                                rec_persona = "🔥 Stress Interviewer (Highly critical, looks for flaws & hesitations)"
-                                rec_mode = "Presentation" if seniority == "Executive" else "Standard Interview"
+                                rec_mode = "Presentation" if seniority == "Executive" else "Technical / Complex"
 
                             st.session_state['round_info'] = {
                                 "meaning": meaning, 
@@ -196,133 +202,245 @@ def main():
                                 "recommended_persona": rec_persona
                             }
                             
-                            # Mock custom questions
-                            st.session_state['custom_questions'] = [
-                                f"Tell me about your experience as a {seniority} {job_title}.",
-                                f"What is your approach to handling {industry} challenges in a {round_type.lower()} setting?",
-                                "-- Custom Question --"
-                            ]
+                            # --- REAL LLM CALL ---
+                            q_prompt = f"Generate 3 highly specific interview questions for a {seniority} {job_title} during the '{selected_round}' round. Output ONLY a Python-style list of strings."
+                            q_response = llm.generate_response(system_prompt="You are an expert interviewer. You output strictly formatted lists.", user_message=q_prompt)
+                            
+                            try:
+                                import ast
+                                questions = ast.literal_eval(q_response)
+                            except:
+                                questions = [q.strip() for q in q_response.replace('[', '').replace(']', '').replace("'", "").split('\n') if q.strip()]
+                                
+                            questions.append("-- Custom Question --")
+                            st.session_state['custom_questions'] = questions
+                            
                             st.session_state['setup_step'] = 3
                             st.rerun()
 
-            # --- WIZARD STEP 3: THE INTERVIEW SIMULATOR ---
+            # --- WIZARD STEP 3: THE CONVERSATIONAL LOOP ---
             if st.session_state['setup_step'] == 3:
-                col1, col2 = st.columns([1, 1.5])
+                st.subheader("🎙️ Live Interview Simulator")
+                
+                info = st.session_state['round_info']
+                st.info(f"⏱️ **Stage Context:** {info['meaning']} | **Interviewer:** {info['recommended_persona']}")
 
-                with col1:
-                    st.subheader("3. Interview Environment")
+                # --- 1. INITIALIZE CONVERSATION MEMORY ---
+                if 'chat_history' not in st.session_state:
+                    # Formulate the strict system prompt to control the LLM's behavior (Completely Dynamic)
+                    sys_prompt = f"You are acting as a {info['recommended_persona']} conducting a {selected_round} interview for a {seniority} {job_title} role in the {industry} industry. Your goal is to assess the candidate's skills based on the persona. Ask ONE question at a time. Keep your questions concise (1-2 sentences). Base your follow-ups strictly on the candidate's previous answer. Do not break character. Do not provide feedback yet."
                     
-                    info = st.session_state['round_info']
-                    st.info(f"⏱️ **Stage Context:** {info['meaning']}")
+                    st.session_state['system_prompt'] = sys_prompt
+                    st.session_state['chat_history'] = []
+                    st.session_state['aggregated_metrics'] = [] # Store acoustic scores for the final report
+                    
+                    # Set the first question automatically
+                    first_q = st.session_state['custom_questions'][0]
+                    st.session_state['chat_history'].append({"role": "assistant", "content": first_q})
+                    
+                    # Trigger TTS for the first question
+                    try:
+                        import pyttsx3
+                        engine = pyttsx3.init()
+                        engine.say(first_q)
+                        engine.runAndWait()
+                    except:
+                        pass
 
-                    # --- NEW: AUTO-SELECTED & LOCKED DROPDOWNS ---
-                    personas = [
-                        "🤝 Friendly HR Recruiter (Focuses on soft skills & culture fit)",
-                        "💼 Strict Technical Lead (Focuses purely on accuracy & efficiency)",
-                        "🔥 Stress Interviewer (Highly critical, looks for flaws & hesitations)"
-                    ]
-                    modes = ["Practice Mode", "Standard Interview", "Technical / Complex", "Presentation"]
-                    
-                    p_idx = personas.index(info['recommended_persona']) if info['recommended_persona'] in personas else 0
-                    m_idx = modes.index(info['recommended_mode']) if info['recommended_mode'] in modes else 1
-                    
-                    # Displayed to the user, but disabled so they can't change it
-                    selected_persona = st.selectbox("Interviewer Persona (Auto-Assigned)", personas, index=p_idx, disabled=True)
-                    selected_mode = st.selectbox("Analysis Mode (Auto-Assigned)", modes, index=m_idx, disabled=True)
+                # --- 2. RENDER THE CHAT INTERFACE ---
+                st.divider()
+                for msg in st.session_state['chat_history']:
+                    avatar = "🤖" if msg["role"] == "assistant" else "👤"
+                    with st.chat_message(msg["role"], avatar=avatar):
+                        st.write(msg["content"])
 
-                    st.divider()
-                    st.subheader("4. Target Question")
-                    
-                    q_col, btn_col = st.columns([4, 1])
-                    with q_col:
-                        selected_q = st.selectbox("Select Question", st.session_state['custom_questions'], label_visibility="collapsed")
-                    
-                    target_question = selected_q
-                    if selected_q == "-- Custom Question --":
-                        target_question = st.text_area("Type your custom question here:")
-                    
-                    with btn_col:
-                        if st.button("🗣️ Ask", use_container_width=True):
-                            try:
-                                import pyttsx3
-                                engine = pyttsx3.init()
-                                engine.say(target_question)
-                                engine.runAndWait()
-                            except Exception as e:
-                                st.toast(f"Audio playback error: {e}", icon="🔇")
-                    
-                    st.divider()
-                    st.subheader("5. Provide Answer")
-                    
-                    input_method = st.radio("Input Method", ["🎙️ Record Live", "📁 Upload Audio"], horizontal=True)
-                    
-                    audio_path = None
-                    if input_method == "🎙️ Record Live":
-                        audio_path = record_audio()
-                        if audio_path: st.audio(audio_path)
-                    else:
-                        uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3", "m4a", "ogg"])
-                        if uploaded_file:
-                            audio_path = os.path.join("temp_data", uploaded_file.name)
-                            with open(audio_path, "wb") as f:
-                                f.write(uploaded_file.getbuffer())
-                            st.audio(audio_path)
+                # --- 3. INPUT & PROCESSING LOOP ---
+                st.divider()
+                st.markdown("### Your Response")
+                input_method = st.radio("Input Method", ["🎙️ Record Live", "📁 Upload Audio"], horizontal=True, label_visibility="collapsed")
+                
+                audio_path = None
+                if input_method == "🎙️ Record Live":
+                    audio_path = record_audio()
+                else:
+                    uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3", "m4a", "ogg"])
+                    if uploaded_file:
+                        audio_path = os.path.join("temp_data", uploaded_file.name)
+                        with open(audio_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
 
-                    if audio_path:
-                        if st.button(f"Analyze Answer ({selected_tier})", type="primary", use_container_width=True):
-                            with st.status("Analyzing your performance...", expanded=True) as status:
-                                st.write("🔍 Running Pre-Flight Silence Check...")
-                                transcript, metrics, duration, error = processor.process_interview(
-                                    audio_path, difficulty=selected_mode, tier=selected_tier
-                                )
+                col_submit, col_end = st.columns(2)
+                
+                with col_submit:
+                    if audio_path and st.button("🗣️ Submit Answer", type="primary", width="stretch"):
+                        with st.spinner("Transcribing and processing..."):
+                            # 1. Process the audio chunk
+                            transcript, metrics, duration, error = processor.process_interview(
+                                audio_path, difficulty=info['recommended_mode'], tier=selected_tier
+                            )
+                            
+                            if error:
+                                st.error(f"⚠️ {error}")
+                            else:
+                                # 2. Save the metrics for later
+                                st.session_state['aggregated_metrics'].append({
+                                    "transcript": transcript,
+                                    "metrics": metrics,
+                                    "duration": duration
+                                })
                                 
-                                if error:
-                                    status.update(label="Analysis Failed", state="error", expanded=True)
-                                    st.error(f"⚠️ {error}")
-                                else:
-                                    # Save to history tracking
-                                    HistoryManager.save_session(metrics['wpm'], metrics['filler_count'], metrics['tone_label'], selected_mode)
-                                    status.update(label="Analysis Complete!", state="complete", expanded=False)
+                                # 3. Append user answer to chat history
+                                st.session_state['chat_history'].append({"role": "user", "content": transcript})
+                                
+                                # 4. Generate the next AI question
+                                with st.spinner(f"🧠 {llm.model_name} is thinking..."):
+                                    next_question = llm.generate_response(
+                                        system_prompt=st.session_state['system_prompt'],
+                                        user_message=transcript,
+                                        chat_history=st.session_state['chat_history'][:-1] # Pass history excluding the current msg
+                                    )
                                     
-                                    # Send full context to dashboard
-                                    full_context = f"[{seniority} {job_title}] - {selected_q}"
-                                    st.session_state['results'] = (transcript, metrics, duration, full_context, selected_persona)
+                                    st.session_state['chat_history'].append({"role": "assistant", "content": next_question})
+                                    
+                                    # Speak the next question
+                                    try:
+                                        engine = pyttsx3.init()
+                                        engine.say(next_question)
+                                        engine.runAndWait()
+                                    except:
+                                        pass
+                                    
                                     st.rerun()
 
-                with col2:
-                    if 'results' in st.session_state:
-                        transcript, metrics, duration, saved_q, saved_persona = st.session_state['results']
-                        from src.ui.dashboard import render_dashboard
-                        render_dashboard(transcript, metrics, duration, selected_mode, selected_tier, saved_q, saved_persona)
-                    else:
-                        st.info("Ready for analysis. Complete the setup and provide your answer.")
+                with col_end:
+                    if len(st.session_state['chat_history']) > 1:
+                        if st.button("🛑 End Interview & Analyze", width="stretch"):
+                            
+                            # --- NEW LOGIC: Catch the final recording ---
+                            if audio_path:
+                                with st.spinner("Processing final answer..."):
+                                    # 1. Transcribe the final audio chunk
+                                    transcript, metrics, duration, error = processor.process_interview(
+                                        audio_path, difficulty=info['recommended_mode'], tier=selected_tier
+                                    )
+                                    
+                                    if not error:
+                                        # 2. Save the metrics
+                                        st.session_state['aggregated_metrics'].append({
+                                            "transcript": transcript,
+                                            "metrics": metrics,
+                                            "duration": duration
+                                        })
+                                        
+                                        # 3. Append the final user answer to the transcript
+                                        st.session_state['chat_history'].append({"role": "user", "content": transcript})
+                            
+                            # Break the loop and trigger the dashboard
+                            st.session_state['interview_complete'] = True
+                            st.rerun()
 
-        # --- HISTORY TAB ---
-        with tab_history:
-            st.subheader("📈 Your Progression")
-            history_data = HistoryManager.load_history()
-            
-            if history_data:
-                df = pd.DataFrame(history_data)
-                
-                # Layout metrics
-                h1, h2, h3 = st.columns(3)
-                h1.metric("Total Sessions", len(df))
-                h2.metric("Avg WPM", round(df['wpm'].mean()))
-                h3.metric("Total Fillers Tracked", df['fillers'].sum())
-                
+            # --- WIZARD STEP 4: THE GRAND FINALE (DASHBOARD) ---
+            if st.session_state.get('interview_complete', False):
                 st.divider()
-                st.markdown("**Speaking Pace (WPM) Over Time**")
-                st.line_chart(df['wpm'], use_container_width=True)
+                st.header("📊 Final Interview Analysis")
                 
-                st.markdown("**Filler Word Count Over Time**")
-                st.bar_chart(df['fillers'], use_container_width=True)
+                # --- NEW: CACHE THE RESULTS SO THEY DON'T REGENERATE ---
+                if 'final_feedback' not in st.session_state:
+                    with st.spinner(f"🧠 {llm.model_name} is compiling your final STAR feedback..."):
+                        
+                        # 1. Aggregate Acoustic Metrics
+                        total_wpm = 0
+                        total_fillers = 0
+                        total_duration = 0
+                        valid_turns = len(st.session_state['aggregated_metrics'])
+                        
+                        if valid_turns > 0:
+                            for turn in st.session_state['aggregated_metrics']:
+                                m = turn['metrics']
+                                total_wpm += m['wpm']
+                                total_fillers += m['filler_count']
+                                total_duration += turn['duration']
+                            
+                            avg_wpm = total_wpm / valid_turns
+                        else:
+                            avg_wpm = 0
+                            
+                        # 2. Compile the full transcript into a single string
+                        full_transcript = ""
+                        for msg in st.session_state['chat_history']:
+                            speaker = "Interviewer" if msg['role'] == "assistant" else "Candidate"
+                            full_transcript += f"**{speaker}**: {msg['content']}\n\n"
+                            
+                        # 3. Request Final LLM Feedback
+                        final_prompt = f"""
+                        You are a senior hiring manager. Review this interview transcript for a {seniority} {job_title} role in the {industry} industry.
+                        
+                        TRANSCRIPT:
+                        {full_transcript}
+                        
+                        Provide a comprehensive evaluation:
+                        1. Overall Impression (1 short paragraph)
+                        2. Key Strengths (Bullet points)
+                        3. Areas for Improvement (Bullet points)
+                        4. STAR Framework Analysis (Evaluate if the candidate successfully used Situation, Task, Action, Result in their answers. Point out specific examples from the transcript).
+                        Format your response in clean Markdown.
+                        """
+                        
+                        final_feedback = llm.generate_response(
+                            system_prompt="You are an expert, direct, and highly constructive career coach.", 
+                            user_message=final_prompt,
+                            chat_history=[] # We pass an empty array here so it doesn't get confused by the persona rules from the live interview
+                        )
+                        
+                        # 4. Save the aggregated stats to the Session History tracker
+                        from src.backend.history import HistoryManager
+                        HistoryManager.save_session(avg_wpm, total_fillers, "Multi-Turn", info['recommended_mode'])
+                        
+                        # --- SAVE EVERYTHING TO SESSION STATE ---
+                        st.session_state['final_feedback'] = final_feedback
+                        st.session_state['full_transcript'] = full_transcript
+                        st.session_state['avg_wpm'] = avg_wpm
+                        st.session_state['total_fillers'] = total_fillers
+                        st.session_state['total_duration'] = total_duration
+
+                # 5. Render the Dashboard UI (Pulling from memory instead of recalculating)
+                tab_feedback, tab_metrics, tab_transcript = st.tabs(["🧠 AI Coach Feedback", "📈 Acoustic Metrics", "📝 Full Transcript"])
                 
-                # Raw Data
-                with st.expander("View Raw Data"):
-                    st.dataframe(df)
-            else:
-                st.info("No session history yet. Complete an analysis to see your progression!")
+                with tab_feedback:
+                    st.markdown(st.session_state['final_feedback'])
+                    
+                with tab_metrics:
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # Pull metrics from memory
+                    mem_wpm = st.session_state['avg_wpm']
+                    mem_fillers = st.session_state['total_fillers']
+                    mem_duration = st.session_state['total_duration']
+                    
+                    # Calculate WPM Delta (Ideal is 130-160)
+                    wpm_delta = "Ideal Pace" if 130 <= mem_wpm <= 160 else "Too Fast/Slow"
+                    wpm_color = "normal" if 130 <= mem_wpm <= 160 else "inverse"
+                    
+                    col1.metric("Average Pacing", f"{mem_wpm:.0f} WPM", delta=wpm_delta, delta_color=wpm_color)
+                    col2.metric("Total Filler Words", mem_fillers)
+                    col3.metric("Total Speaking Time", f"{mem_duration:.1f}s")
+                    st.info("💡 Note: A conversational pace of 130-160 WPM is considered highly confident and professional.")
+                    
+                with tab_transcript:
+                    st.markdown(st.session_state['full_transcript'])
+                    
+                # 6. Markdown Export Option
+                st.divider()
+                report_content = f"# Interview Report: {job_title} ({industry})\n\n## 📈 Acoustic Metrics\n- **Average WPM:** {mem_wpm:.0f}\n- **Total Filler Words:** {mem_fillers}\n- **Total Speaking Time:** {mem_duration:.1f}s\n\n## 🧠 AI Coach Feedback\n{st.session_state['final_feedback']}\n\n## 📝 Full Transcript\n{st.session_state['full_transcript']}"
+                
+                st.download_button(
+                    label="📥 Download Report",
+                    data=report_content,
+                    file_name=f"interview_report_{job_title.replace(' ', '_')}.md",
+                    mime="text/markdown",
+                    type="primary",
+                    width="stretch"
+                )
 
     except Exception as e:
         st.error("🚨 An unexpected error occurred.")
