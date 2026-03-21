@@ -1,23 +1,26 @@
 name: ai-interview-coach
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
   - defaults
 dependencies:
   - python=3.10
   - pip
-  - cudatoolkit       # Required for NVIDIA GPU acceleration
-  - pytorch           # Critical: Required for 'import torch' in hardware.py
   - pip:
-    - streamlit       # The UI Framework
-    - faster-whisper  # Optimized AI Transcription (CTranslate2 backend)
-    - librosa         # Audio Analysis (Pitch, Tone, Silence)
-    - soundfile       # Audio loading backend for Librosa
-    - numpy           # Math operations for Tone Analysis
-    - psutil          # System Resource Monitoring (RAM/CPU)
-    - py-cpuinfo      # CPU Brand Detection (Intel vs Apple vs AMD)
-    - watchdog        # Development: Auto-reloads app on code change
-    - pandas          # NEW: Required for Session History charts
-    - pyttsx3         # NEW: Required for Offline Text-to-Speech
-    - ollama          # Upcoming: For Phase 2.3 (The Brain)
+    # Frontend
+    - streamlit
+    - requests
+    # Backend Server
+    - fastapi
+    - uvicorn
+    - python-multipart
+    - pydantic
+    # AI & Audio Processing
+    - faster-whisper
+    - torch
+    - librosa
+    - soundfile
+    # LLM & Utilities
+    - ollama
+    - pyttsx3
+    - psutil
+    - py-cpuinfo
