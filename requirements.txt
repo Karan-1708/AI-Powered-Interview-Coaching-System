@@ -1,23 +1,27 @@
-# --- Frontend (Client UI) ---
+# --- Frontend & Analytics ---
 streamlit>=1.30.0
 requests>=2.31.0
+pandas>=2.1.0
+plotly>=5.18.0
+fpdf2>=2.7.7
+markdown>=3.5.2
 
-# --- Backend (API Server) ---
+# --- Backend Server ---
 fastapi>=0.109.0
 uvicorn>=0.27.0
 python-multipart>=0.0.9
 pydantic>=2.5.3
 
-# --- Audio & Machine Learning ---
+# --- AI & Audio (CUDA STACK) ---
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.1.2+cu121
+torchaudio==2.1.2+cu121
 faster-whisper>=1.0.0
-torch>=2.1.0
 librosa>=0.10.1
 soundfile>=0.12.1
 
-# --- LLM Integration ---
+# --- LLM & Utilities ---
 ollama>=0.1.6
-
-# --- Utilities & Hardware ---
 pyttsx3>=2.90
 psutil>=5.9.8
 py-cpuinfo>=9.0.0

@@ -53,6 +53,33 @@ class LLMRequest(BaseModel):
     chat_history: Optional[List[ChatMessage]] = []
     tier: str = "Balanced"
 
+# --- 0. HEALTH CHECK ENDPOINT ---
+@app.get("/")
+async def root():
+    """Simple health check to verify the API is awake."""
+    return {"status": "online", "message": "Data Drifters API is running. Visit /docs for documentation. Keep on Drifting"}
+
+# --- HARDWARE IMPORTS (Add near the top with your other imports) ---
+from src.backend.hardware import HardwareInfo
+from src.backend.monitor import ResourceMonitor
+
+# Initialize them globally so we don't recreate them on every ping
+hw_info = HardwareInfo()
+res_monitor = ResourceMonitor()
+
+# --- NEW ENDPOINT: HARDWARE TELEMETRY ---
+@app.get("/hardware")
+async def get_hardware():
+    """Returns the API container's live hardware stats and GPU status."""
+    rec_tier, rec_reason = hw_info.get_recommendation()
+    stats = res_monitor.get_system_usage()
+    return {
+        "tier": rec_tier,
+        "reason": rec_reason,
+        "has_nvidia": hw_info.has_nvidia,
+        "stats": stats
+    }
+
 # --- 1. THE AUDIO PROCESSING ENDPOINT ---
 @app.post("/process-audio")
 async def process_audio(
@@ -122,4 +149,5 @@ async def generate_response(request: LLMRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("src.api.server:app", host="127.0.0.1", port=8000, reload=True)
+    # 0.0.0.0 allows both Docker and Local connections
+    uvicorn.run("src.api.server:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: interview_api
+    # Enables hot-reloading inside the container
+    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    volumes:
+      - ./src:/app/src
+      - ./temp_data:/app/temp_data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: interview_ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    environment:
+      - API_URL=http://api:8000
+    volumes:
+      - ./app.py:/app/app.py
+      - ./src:/app/src
+      - ./temp_data:/app/temp_data

@@ -6,21 +6,21 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-    # Frontend
     - streamlit
     - requests
-    # Backend Server
+    - pandas
+    - plotly
+    - fpdf2
     - fastapi
     - uvicorn
     - python-multipart
     - pydantic
-    # AI & Audio Processing
     - faster-whisper
     - torch
     - librosa
     - soundfile
-    # LLM & Utilities
     - ollama
     - pyttsx3
     - psutil
     - py-cpuinfo
+    - markdown

@@ -1,13 +1,22 @@
 import platform
-import torch
 import cpuinfo
 import psutil
+
+# --- DEFENSIVE IMPORT ---
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 class HardwareInfo:
     def __init__(self):
         self.os_name = platform.system()
         self.cpu_info = cpuinfo.get_cpu_info()['brand_raw']
-        self.has_nvidia = torch.cuda.is_available()
+        
+        # SAFE CHECK: Only ask torch if it exists!
+        self.has_nvidia = TORCH_AVAILABLE and torch.cuda.is_available()
+        
         self.is_apple_silicon = platform.processor() == 'arm' and self.os_name == 'Darwin'
         
         # Get Total RAM for recommendations
@@ -27,7 +36,7 @@ class HardwareInfo:
 
         # 2. Mid-Range: Apple Silicon OR >12GB RAM
         if self.is_apple_silicon:
-            return "Balanced (Mid Spec)", "🟢 Apple Silicon detected. Optimized for Neural Engine. Balanced recommended but do give Pro Mode a try if your computer can handle it."
+            return "Balanced (Mid Spec)", "🟢 Apple Silicon detected. Optimized for Neural Engine. Balanced recommended."
         
         if self.total_ram_gb >= 12:
             return "Balanced (Mid Spec)", "🟡 Good RAM amount (12GB+). Balanced Mode recommended."

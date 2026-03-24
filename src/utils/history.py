@@ -48,3 +48,27 @@ class HistoryManager:
                 logger.error(f"Error loading history: {e}")
                 return []
         return []
+
+    @staticmethod
+    def clear_history():
+        """Hunts down and deletes all saved session history data."""
+        import os
+        from src.utils.file_manager import FileManager
+        
+        # Check the logs directory for any history JSON files and wipe them
+        if os.path.exists(FileManager.LOG_DIR):
+            for file in os.listdir(FileManager.LOG_DIR):
+                if file.endswith('.json'):
+                    try:
+                        os.remove(os.path.join(FileManager.LOG_DIR, file))
+                    except:
+                        pass
+        
+        # Also check the temp directory just in case it was saved there
+        if os.path.exists(FileManager.TEMP_DIR):
+            for file in os.listdir(FileManager.TEMP_DIR):
+                if file.endswith('.json'):
+                    try:
+                        os.remove(os.path.join(FileManager.TEMP_DIR, file))
+                    except:
+                        pass
