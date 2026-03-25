@@ -34,6 +34,21 @@ This ensures that students, educators, and developers can access, audit, and exp
 
 ---
 
+## *Testing*
+The system includes a comprehensive pytest suite to ensure stability and correctness.
+
+### Running Tests
+To run the tests, ensure you have the dependencies installed and run:
+```bash
+# Run all tests
+$env:PYTHONPATH = "."; pytest tests/
+```
+The suite includes:
+- **API Tests:** Validates FastAPI endpoints using mocked AI engines for speed.
+- **Utility Tests:** Verifies history management and file system operations.
+
+---
+
 ## *Goals*
 -  Provide secure, offline, AI-powered interview coaching
 -  Promote educational equity and accessibility

@@ -1,177 +1,188 @@
 import os
 import platform
 import shutil
-import streamlit as st
+import json
 import logging
-import requests
 import ast
 import time
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
-# --- 1. GLOBAL CRASH PROTECTION ---
-if platform.system() == "Windows":
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
-from src.ui.recorder import record_audio
-from src.backend.hardware import HardwareInfo
-from src.backend.monitor import ResourceMonitor
-from src.utils.diagnostics import log_system_info, get_logger
-from src.utils.file_manager import FileManager
-from src.utils.pdf_generator import PDFGenerator
-
-# Initialize Logging
+# --- 1. ENVIRONMENT & LOGGING ---
+from src.utils.diagnostics import get_logger, log_system_info
 log_system_info()
 logger = get_logger()
 
-# ==========================================
-# THE API CLIENT (THE BRIDGE)
-# ==========================================
-class APIClient:
-    # If the environment variable isn't set (Local), use localhost. If it is (Docker), use 'api'.
-    BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+# --- 2. BACKEND & API ---
+from src.api.client import APIClient
+from src.ui.recorder import record_audio
+from src.utils.file_manager import FileManager
+from src.utils.pdf_generator import PDFGenerator
+from src.utils.history import HistoryManager
 
-    @staticmethod
-    def get_hardware_status():
-        """Fetches live telemetry from the backend API container."""
-        url = f"{APIClient.BASE_URL}/hardware"
-        try:
-            res = requests.get(url, timeout=2)
-            if res.status_code == 200:
-                return res.json()
-        except: pass
-        return None
-
-    @staticmethod
-    def process_audio(file_path, difficulty, tier):
-        """Sends the audio file to the backend API for Whisper transcription."""
-        url = f"{APIClient.BASE_URL}/process-audio"
-        try:
-            with open(file_path, "rb") as f:
-                files = {"file": (os.path.basename(file_path), f, "audio/wav")}
-                data = {"difficulty": difficulty, "tier": tier}
-                response = requests.post(url, files=files, data=data)
-            
-            if response.status_code == 200:
-                res = response.json()
-                return res['transcript'], res['metrics'], res['duration'], None
-            return None, None, None, f"API Error: {response.text}"
-        except requests.exceptions.ConnectionError:
-            return None, None, None, "Connection Error: Is the FastAPI server running?"
-
-    @staticmethod
-    def generate_response(system_prompt, user_message, chat_history, tier):
-        """Sends the chat history to the backend API for Ollama inference."""
-        url = f"{APIClient.BASE_URL}/generate-response"
-        payload = {
-            "system_prompt": system_prompt,
-            "user_message": user_message,
-            "chat_history": chat_history,
-            "tier": tier
-        }
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                return response.json()['response']
-            return f"API Error: {response.text}"
-        except requests.exceptions.ConnectionError:
-            return "Connection Error: Is the FastAPI server running?"
-
-# --- DLL FIX ---
-def register_nvidia_dlls():
-    if platform.system() != "Windows": return
-    try:
-        import site
-        possible_paths = site.getsitepackages()
-        try: possible_paths.append(site.getusersitepackages())
-        except: pass
-        for base_path in possible_paths:
-            cublas_bin = os.path.join(base_path, "nvidia", "cublas", "bin")
-            cudnn_bin = os.path.join(base_path, "nvidia", "cudnn", "bin")
-            if os.path.exists(os.path.join(cublas_bin, "cublas64_12.dll")):
-                os.environ["PATH"] += os.pathsep + cublas_bin
-                os.environ["PATH"] += os.pathsep + cudnn_bin
-                if hasattr(os, "add_dll_directory"):
-                    os.add_dll_directory(cublas_bin)
-                    os.add_dll_directory(cudnn_bin)
-                break
-    except Exception: pass
-register_nvidia_dlls()
+# Ensure directories are ready
+FileManager.initialize_directories()
 
 # --- LIVE HARDWARE FRAGMENT ---
 @st.fragment(run_every=2)
-def live_hardware_monitor(selected_tier):
+def live_hardware_monitor():
+    """Renders the sidebar telemetry dashboard."""
     hw_status = APIClient.get_hardware_status()
     if not hw_status:
-        # Changed from st.sidebar.warning to st.warning
         st.warning("⚠️ Cannot connect to API Telemetry.")
         return
         
-    stats = hw_status["stats"]
-    has_nvidia = hw_status["has_nvidia"]
+    stats = hw_status.get("stats", {})
+    has_nvidia = hw_status.get("has_nvidia", False) 
+    gpu_detected = stats.get("gpu_detected", False) 
+    gpu_name = stats.get("gpu_name")
     
-    if "Pro" in selected_tier and has_nvidia:
-        st.progress(stats['vram_percent'] / 100, text=f"API VRAM: {stats['vram_used_gb']}/{stats['vram_total_gb']} GB")
+    cpu_val = stats.get('cpu_percent') or 0
+    ram_pct = stats.get('ram_percent') or 0
+    ram_used = stats.get('ram_used_gb') or 0
+    ram_total = stats.get('ram_total_gb') or 0
+    
+    st.progress(min(max(float(cpu_val) / 100.0, 0.0), 1.0), text=f"API CPU: {cpu_val}%")
+    st.progress(min(max(float(ram_pct) / 100.0, 0.0), 1.0), text=f"API RAM: {ram_used}/{ram_total} GB")
+    
+    if gpu_detected:
+        vram_pct = stats.get('vram_percent') or 0
+        vram_used = stats.get('vram_used_gb') or 0
+        vram_total = stats.get('vram_total_gb') or 0
+        display_name = gpu_name if gpu_name else "NVIDIA GPU"
+        
+        status_suffix = " ⚠️ Torch Config Error" if not has_nvidia else ""
+        text_label = f"API VRAM: {vram_used}/{vram_total} GB ({display_name}){status_suffix}"
+        st.progress(min(max(float(vram_pct) / 100.0, 0.0), 1.0), text=text_label)
     else:
-        st.progress(stats['cpu_percent'] / 100, text=f"API CPU: {stats['cpu_percent']}%")
-        st.progress(stats['ram_percent'] / 100, text=f"API RAM: {stats['ram_used_gb']}/{stats['ram_total_gb']} GB")
+        if st.session_state.get('engine_config', {}).get('compute') == "NVIDIA GPU":
+            st.caption("🔴 No NVIDIA GPU detected by API.")
 
-# --- MAIN APP ---
+# --- HELPERS ---
+def speak_text(text):
+    """Safely triggers the TTS engine in a background thread."""
+    if not text: return
+    
+    import threading
+    def run_tts():
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 160)
+            engine.say(text)
+            engine.runAndWait()
+            # Explicitly cleanup
+            del engine
+        except Exception as e:
+            logger.debug(f"TTS Thread Error: {e}")
+
+    # Start TTS in a background thread to avoid hanging Streamlit
+    threading.Thread(target=run_tts, daemon=True).start()
+
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="AI Interview Coach", page_icon="🎙️", layout="wide")
 
 def main():
     try:
         st.title("🎙️ AI Interview Coach")
         
-        # --- SIDEBAR ---
-        st.sidebar.header("🖥️ API Hardware Monitor")
+        # --- SIDEBAR: ALWAYS-ON MONITOR ---
+        st.sidebar.header("🖥️ Live System Telemetry")
         
-        # Pull hardware data from the backend!
-        hw_status = APIClient.get_hardware_status()
-        if hw_status:
-            rec_tier = hw_status["tier"]
-            rec_reason = hw_status["reason"]
-        else:
-            rec_tier, rec_reason = "Eco (Low Spec)", "🔴 API Offline or Booting..."
+        compute_target = st.sidebar.radio("Compute Allocation", ["NVIDIA GPU", "CPU & RAM Core"], horizontal=True)
         
-        default_index = 0
-        if "Balanced" in rec_tier: default_index = 1
-        if "Pro" in rec_tier: default_index = 2
-        
-        selected_tier = st.sidebar.selectbox("Performance Profile", 
-            ["Eco (Low Spec)", "Balanced (Mid Spec)", "Pro (High Spec)"], 
-            index=default_index, help=f"Recommendation: {rec_reason}")
-
+        # WRAP THE FRAGMENT IN THE SIDEBAR CONTEXT!
+        # This prevents the progress bars from escaping into the main window
         with st.sidebar:
-            live_hardware_monitor(selected_tier) # Pass only the tier now
+            live_hardware_monitor()
 
         st.sidebar.divider()
-        st.sidebar.header("🔒 Privacy & Data")
         
-        audio_files = len(os.listdir(FileManager.TEMP_DIR)) if os.path.exists(FileManager.TEMP_DIR) else 0
-        log_files = len(os.listdir(FileManager.LOG_DIR)) if os.path.exists(FileManager.LOG_DIR) else 0
+        # --- SIDEBAR: ENGINE CONFIGURATION ---
+        st.sidebar.header("⚙️ Model Configuration")
         
-        st.sidebar.caption(f"Stored Data: {audio_files} recordings, {log_files} logs.")
+        provider = st.sidebar.selectbox("Inference Provider", ["Local (Ollama)", "External API (Frontier Models)"])
         
-        # We removed the 'if files > 0' check so you can force a reset anytime
-        if st.sidebar.button("🗑️ Hard Reset & Delete All Data", type="primary"):
-            # 1. Delete physical audio and log files
-            count = FileManager.cleanup_all_data() 
+        if provider == "Local (Ollama)":
+            # 1. Dynamically fetch already downloaded models
+            downloaded_models = APIClient.get_local_models()
+            selected_model = st.sidebar.selectbox("Local Model", downloaded_models)
             
-            # 2. Delete the History JSON file
-            try:
-                from src.utils.history import HistoryManager
-                HistoryManager.clear_history()
-            except Exception as e: 
-                logger.error(f"Failed to clear history: {e}")
-
-            # 3. Nuke the Streamlit Session State (The Virtual RAM)
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            with st.sidebar.expander("⬇️ Download New Local Model"):
+                new_model_name = st.text_input("Ollama Model Tag (e.g., gemma2:9b)")
                 
-            st.sidebar.success("System wiped. Rebooting interface...")
-            time.sleep(1) # Give the user 1 second to read the success message
-            st.rerun()
+                if st.button("Pull Model", use_container_width=True):
+                    progress_bar = st.progress(0, text="Initializing download...")
+                    try:
+                        # 2. Start the stream
+                        response = APIClient.pull_model_stream(new_model_name)
+                        for line in response.iter_lines():
+                            if line:
+                                data = json.loads(line.decode('utf-8'))
+                                status = data.get("status", "Downloading...")
+                                
+                                # 3. Calculate percentage if bytes are provided
+                                if "completed" in data and "total" in data and data["total"] > 0:
+                                    percent = data["completed"] / data["total"]
+                                    progress_bar.progress(percent, text=f"{status} ({int(percent*100)}%)")
+                                else:
+                                    progress_bar.empty()
+                                    st.sidebar.caption(f"Status: {status}")
+                        
+                        st.sidebar.success(f"✅ {new_model_name} ready!")
+                        st.rerun() # Refresh to show new model in dropdown
+                    except Exception as e:
+                        st.error(f"Download failed: {e}")
+            
+            api_key = None 
+            
+        else:
+            api_service = st.sidebar.selectbox("API Target", ["OpenAI", "Anthropic", "Google Gemini"])
+            selected_model = st.sidebar.text_input("Model String", placeholder="e.g., gpt-4o, claude-3-sonnet")
+            api_key = st.sidebar.text_input("Secret API Key", type="password")
+            
+        # Save these settings to the session state
+        st.session_state['engine_config'] = {
+            "provider": provider,
+            "model": selected_model,
+            "compute": compute_target,
+            "api_key": api_key
+        }
+
+        # --- 🔌 CONNECTION STATUS & BUTTON ---
+        st.sidebar.divider()
+        st.sidebar.markdown("### 🔌 Connection Status")
+        
+        # Initialize state if it doesn't exist
+        if 'connection_status' not in st.session_state:
+            st.session_state['connection_status'] = {"success": False, "message": "⚪ Not tested yet."}
+            
+        if st.sidebar.button("Test Connection", use_container_width=True, type="primary"):
+            with st.spinner("Pinging AI Engine..."):
+                success, msg = APIClient.test_connection(st.session_state['engine_config'])
+                st.session_state['connection_status'] = {"success": success, "message": msg}
+                
+        # Display the result
+        status = st.session_state['connection_status']
+        if status["success"]:
+            st.sidebar.success(status["message"])
+        elif "⚪" in status["message"]:
+            st.sidebar.info(status["message"])
+        else:
+            st.sidebar.error(status["message"])
+
+        st.sidebar.divider()
+        
+        # --- SIDEBAR: CLEANUP ---
+        with st.sidebar.expander("🗑️ Danger Zone"):
+            st.warning("This will permanently delete all session history and audio recordings.")
+            if st.button("Delete All Data", use_container_width=True, type="primary"):
+                files_deleted = FileManager.cleanup_all_data()
+                HistoryManager.clear_history()
+                st.success(f"Successfully cleared {files_deleted} files and history.")
+                time.sleep(1)
+                st.rerun()
 
         st.sidebar.divider()
 
@@ -202,7 +213,7 @@ def main():
                             system_prompt="You output strictly formatted lists.", 
                             user_message=prompt, 
                             chat_history=[], 
-                            tier=selected_tier
+                            engine_config=st.session_state['engine_config']
                         )
                         
                         try:
@@ -244,20 +255,31 @@ def main():
                             
                             q_prompt = f"Generate 3 highly specific interview questions for a {seniority} {job_title} during the '{selected_round}' round. Output ONLY a Python-style list of strings."
                             q_response = APIClient.generate_response(
-                                system_prompt="You are an expert interviewer. You output strictly formatted lists.", 
+                                system_prompt="You are an expert interviewer. You output ONLY a Python-style list of strings.", 
                                 user_message=q_prompt, 
                                 chat_history=[], 
-                                tier=selected_tier
+                                engine_config=st.session_state['engine_config']
                             )
                             
+                            # --- ROBUST PARSING ---
                             try:
-                                questions = ast.literal_eval(q_response)
+                                # Try to find a list [ ... ] within the response
+                                import re
+                                match = re.search(r"\[.*\]", q_response, re.DOTALL)
+                                if match:
+                                    questions = ast.literal_eval(match.group())
+                                else:
+                                    # Fallback: Split by lines and clean
+                                    questions = [q.strip().lstrip('123456789. ') for q in q_response.split('\n') if q.strip()]
                             except:
-                                questions = [q.strip() for q in q_response.replace('[', '').replace(']', '').replace("'", "").split('\n') if q.strip()]
+                                questions = [q.strip() for q in q_response.split('\n') if q.strip()]
+                            
+                            # Ensure we actually got questions
+                            if not questions:
+                                questions = ["Could you tell me about your background?", "Why are you interested in this role?"]
                                 
                             questions.append("-- Custom Question --")
                             st.session_state['custom_questions'] = questions
-                            
                             st.session_state['setup_step'] = 3
                             st.rerun()
 
@@ -275,17 +297,16 @@ def main():
                     st.session_state['chat_history'] = []
                     st.session_state['aggregated_metrics'] = [] 
                     
-                    first_q = st.session_state['custom_questions'][0]
+                    # Ensure first_q is a real string
+                    first_q = st.session_state['custom_questions'][0] if st.session_state['custom_questions'] else "Let's begin. Please introduce yourself."
+                    
                     st.session_state['chat_history'].append({"role": "assistant", "content": first_q})
                     
-                    try:
-                        import pyttsx3
-                        engine = pyttsx3.init()
-                        engine.say(first_q)
-                        engine.runAndWait()
-                    except: pass
+                    # Call the safe speaker
+                    speak_text(first_q)
 
-                st.divider()
+                    st.divider()
+
                 for msg in st.session_state['chat_history']:
                     avatar = "🤖" if msg["role"] == "assistant" else "👤"
                     with st.chat_message(msg["role"], avatar=avatar):
@@ -293,28 +314,29 @@ def main():
 
                 st.divider()
                 st.markdown("### Your Response")
-                input_method = st.radio("Input Method", ["🎙️ Record Live", "📁 Upload Audio"], horizontal=True, label_visibility="collapsed")
                 
-                audio_path = None
-                if input_method == "🎙️ Record Live":
-                    audio_path = record_audio()
-                else:
-                    uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3", "m4a", "ogg"])
-                    if uploaded_file:
-                        audio_path = os.path.join(FileManager.TEMP_DIR, uploaded_file.name)
-                        with open(audio_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
+                # Solely relying on the live microphone
+                audio_path = record_audio()
 
                 col_submit, col_end = st.columns(2)
                 
                 with col_submit:
-                    if audio_path and st.button("🗣️ Submit Answer", type="primary", width="stretch"):
+                    # Submit button only activates if a recording exists
+                    if audio_path and st.button("🗣️ Submit Answer", type="primary", use_container_width=True):
                         with st.spinner("Transcribing and processing..."):
-                            transcript, metrics, duration, error = APIClient.process_audio(audio_path, info['recommended_mode'], selected_tier)
+                            # We pass 'NVIDIA GPU' or 'CPU' directly from your sidebar config
+                            compute_type = st.session_state['engine_config']['compute']
+                            
+                            transcript, metrics, duration, error = APIClient.process_audio(
+                                audio_path, 
+                                info['recommended_mode'], 
+                                compute_type
+                            )
                             
                             if error:
                                 st.error(f"⚠️ {error}")
                             else:
+                                # Update history and state
                                 st.session_state['aggregated_metrics'].append({
                                     "transcript": transcript,
                                     "metrics": metrics,
@@ -322,30 +344,34 @@ def main():
                                 })
                                 st.session_state['chat_history'].append({"role": "user", "content": transcript})
                                 
+                                # Generate the next AI question
                                 with st.spinner("🧠 API is thinking..."):
                                     next_question = APIClient.generate_response(
                                         system_prompt=st.session_state['system_prompt'], 
                                         user_message=transcript, 
                                         chat_history=st.session_state['chat_history'][:-1], 
-                                        tier=selected_tier
+                                        engine_config=st.session_state['engine_config']
                                     )
                                     
                                     st.session_state['chat_history'].append({"role": "assistant", "content": next_question})
                                     
-                                    try:
-                                        engine = pyttsx3.init()
-                                        engine.say(next_question)
-                                        engine.runAndWait()
-                                    except: pass
+                                    # Trigger the TTS to speak the question
+                                    speak_text(next_question)
                                     
                                     st.rerun()
 
                 with col_end:
                     if len(st.session_state['chat_history']) > 1:
-                        if st.button("🛑 End Interview & Analyze", width="stretch"):
+                        if st.button("🛑 End Interview & Analyze", use_container_width=True):
+                            # Process the final recording if one exists before ending
                             if audio_path:
                                 with st.spinner("Processing final answer..."):
-                                    transcript, metrics, duration, error = APIClient.process_audio(audio_path, info['recommended_mode'], selected_tier)
+                                    compute_type = st.session_state['engine_config']['compute']
+                                    transcript, metrics, duration, error = APIClient.process_audio(
+                                        audio_path, 
+                                        info['recommended_mode'], 
+                                        compute_type
+                                    )
                                     if not error:
                                         st.session_state['aggregated_metrics'].append({
                                             "transcript": transcript,
@@ -410,11 +436,10 @@ def main():
                             system_prompt="You are an expert, direct, and highly constructive career coach.", 
                             user_message=final_prompt, 
                             chat_history=[], 
-                            tier=selected_tier
+                            engine_config=st.session_state['engine_config']
                         )
                         
                         try:
-                            from src.utils.history import HistoryManager
                             HistoryManager.save_session(avg_wpm, total_fillers, "Multi-Turn", info['recommended_mode'])
                         except: pass
                         
@@ -492,9 +517,8 @@ def main():
             
             # Load history using the HistoryManager
             try:
-                from src.utils.history import HistoryManager
                 history_data = HistoryManager.load_history()
-            except ImportError:
+            except Exception:
                 history_data = []
 
             if not history_data:

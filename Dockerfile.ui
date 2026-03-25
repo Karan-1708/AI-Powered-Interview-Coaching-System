@@ -2,13 +2,15 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Only core Python libs needed for UI
+# Install system dependencies for Audio and TTS
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    espeak \
+    libespeak1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8501
-
-LABEL project="Data Drifters AI Coach"
-LABEL component="Streamlit Frontend"
-
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

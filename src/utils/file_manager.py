@@ -1,6 +1,6 @@
 import os
 import logging
-from src.utils.diagnostics import get_logger
+from src.utils.diagnostics import get_logger, safe_execute
 
 logger = get_logger()
 
@@ -9,12 +9,14 @@ class FileManager:
     LOG_DIR = "logs"
 
     @classmethod
+    @safe_execute(log_msg="Dir Init Error")
     def initialize_directories(cls):
         """Ensures required working directories exist on startup."""
         os.makedirs(cls.TEMP_DIR, exist_ok=True)
         os.makedirs(cls.LOG_DIR, exist_ok=True)
 
     @classmethod
+    @safe_execute(default_val=0, log_msg="Cleanup Error")
     def cleanup_all_data(cls):
         """Deletes all temporary audio files and logs (Privacy Feature) - Windows Safe."""
         deleted_files = 0
@@ -23,7 +25,6 @@ class FileManager:
         if os.path.exists(cls.TEMP_DIR):
             for f in os.listdir(cls.TEMP_DIR):
                 try:
-                    # Skip the history JSON, only delete audio files
                     if f.endswith('.wav') or f.endswith('.mp3'):
                         os.remove(os.path.join(cls.TEMP_DIR, f))
                         deleted_files += 1
@@ -32,13 +33,8 @@ class FileManager:
 
         # 2. Clean Log Files (Critical Fix for Windows File Locks)
         if os.path.exists(cls.LOG_DIR):
-            logger_instance = logging.getLogger("AI_Coach")
-            handlers = logger_instance.handlers[:]
-            for handler in handlers:
-                handler.close()
-                logger_instance.removeHandler(handler)
-            
             for f in os.listdir(cls.LOG_DIR):
+                if f == "app_debug.log": continue
                 try:
                     os.remove(os.path.join(cls.LOG_DIR, f))
                     deleted_files += 1
@@ -48,10 +44,8 @@ class FileManager:
         return deleted_files
 
     @classmethod
+    @safe_execute(log_msg="Safe Delete Error")
     def safe_delete_file(cls, file_path):
         """Safely removes a single file without crashing if it doesn't exist."""
-        try:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception as e:
-            logger.warning(f"Failed to delete {file_path}: {e}")
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)

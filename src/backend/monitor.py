@@ -1,8 +1,56 @@
 import psutil
-import torch
 import platform
+import logging
+import subprocess
+import shutil
+import re
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+logger = logging.getLogger("AI_Coach")
 
 class ResourceMonitor:
+    def __init__(self):
+        # Initial call to seed cpu_percent
+        psutil.cpu_percent(interval=None)
+
+    def _get_gpu_stats_via_smi(self):
+        """
+        Fallback: Use nvidia-smi to get GPU info if torch is not working.
+        Returns (name, used_gb, total_gb, percent) or (None, 0, 0, 0)
+        """
+        if not shutil.which("nvidia-smi"):
+            return None, 0, 0, 0
+            
+        try:
+            # Get Name, Memory Used, and Memory Total
+            cmd = "nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader,nounits"
+            result = subprocess.check_output(cmd, shell=True).decode("utf-8").strip()
+            
+            if not result:
+                return None, 0, 0, 0
+                
+            parts = [p.strip() for p in result.split(",")]
+            if len(parts) >= 3:
+                name = parts[0]
+                used_mb = float(parts[1])
+                total_mb = float(parts[2])
+                
+                used_gb = round(used_mb / 1024, 1)
+                total_gb = round(total_mb / 1024, 1)
+                percent = int((used_mb / total_mb) * 100) if total_mb > 0 else 0
+                
+                return name, used_gb, total_gb, percent
+        except Exception as e:
+            # logger.debug(f"SMI Error: {e}")
+            pass
+            
+        return None, 0, 0, 0
+
     def get_system_usage(self):
         """
         Returns a dictionary of current current system resources.
@@ -15,22 +63,38 @@ class ResourceMonitor:
             "gpu_name": None,
             "vram_used_gb": 0,
             "vram_total_gb": 0,
-            "vram_percent": 0
+            "vram_percent": 0,
+            "gpu_detected": False
         }
 
-        # Check for NVIDIA GPU
-        if torch.cuda.is_available():
+        # 1. Try Torch first (Active monitoring)
+        if TORCH_AVAILABLE:
             try:
-                stats["gpu_name"] = torch.cuda.get_device_name(0)
-                # VRAM calculations (in bytes -> GB)
-                total_mem = torch.cuda.get_device_properties(0).total_memory
-                allocated = torch.cuda.memory_allocated(0)
-                reserved = torch.cuda.memory_reserved(0)
-                
-                stats["vram_total_gb"] = round(total_mem / (1024**3), 1)
-                stats["vram_used_gb"] = round(reserved / (1024**3), 1)
-                stats["vram_percent"] = int((reserved / total_mem) * 100)
-            except:
-                pass # Fail silently if driver issues
-        
+                if torch.cuda.is_available():
+                    stats["gpu_detected"] = True
+                    stats["gpu_name"] = torch.cuda.get_device_name(0)
+                    
+                    free_res, total_res = torch.cuda.mem_get_info(0)
+                    used_res = total_res - free_res
+                    
+                    stats["vram_total_gb"] = round(total_res / (1024**3), 1)
+                    stats["vram_used_gb"] = round(used_res / (1024**3), 1)
+                    
+                    if total_res > 0:
+                        stats["vram_percent"] = int((used_res / total_res) * 100)
+                    else:
+                        stats["vram_percent"] = 0
+                    return stats # Success with torch
+            except Exception:
+                pass
+
+        # 2. Fallback to nvidia-smi if torch failed or isn't available
+        name, used, total, pct = self._get_gpu_stats_via_smi()
+        if name:
+            stats["gpu_detected"] = True
+            stats["gpu_name"] = name
+            stats["vram_used_gb"] = used
+            stats["vram_total_gb"] = total
+            stats["vram_percent"] = pct
+            
         return stats

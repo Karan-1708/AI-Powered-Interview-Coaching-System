@@ -2,57 +2,47 @@ import json
 import os
 from datetime import datetime
 import traceback
-from src.utils.diagnostics import get_logger
+from src.utils.diagnostics import get_logger, safe_execute
 
 logger = get_logger()
 HISTORY_FILE = os.path.join("temp_data", "session_history.json")
 
 class HistoryManager:
     @staticmethod
+    @safe_execute(default_val=None, log_msg="Save History Error")
     def save_session(wpm, fillers, tone, mode):
         """Saves core metrics to a local JSON file for progression tracking."""
-        try:
-            # Safely ensure the directory exists based on the file path
-            os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "wpm": wpm,
+            "fillers": fillers,
+            "tone": tone,
+            "mode": mode
+        }
+        
+        history = HistoryManager.load_history()
+        history.append(entry)
+        
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history, f, indent=4)
             
-            entry = {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "wpm": wpm,
-                "fillers": fillers,
-                "tone": tone,
-                "mode": mode
-            }
-            
-            history = HistoryManager.load_history()
-            history.append(entry)
-            
-            with open(HISTORY_FILE, "w") as f:
-                json.dump(history, f, indent=4)
-                
-            logger.info(f"Session history successfully saved for mode: {mode}")
-            
-        except Exception as e:
-            logger.error(f"Failed to save history: {e}\n{traceback.format_exc()}")
+        logger.info(f"Session history successfully saved for mode: {mode}")
 
     @staticmethod
+    @safe_execute(default_val=[], log_msg="Load History Error")
     def load_history():
         """Loads the session history, handling missing or corrupted files."""
         if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, "r") as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                logger.warning("History file corrupted. Creating a fresh history array.")
-                return []
-            except Exception as e:
-                logger.error(f"Error loading history: {e}")
-                return []
+            with open(HISTORY_FILE, "r") as f:
+                return json.load(f)
         return []
 
     @staticmethod
+    @safe_execute(default_val=None, log_msg="Clear History Error")
     def clear_history():
         """Hunts down and deletes all saved session history data."""
-        import os
         from src.utils.file_manager import FileManager
         
         # Check the logs directory for any history JSON files and wipe them
@@ -72,3 +62,6 @@ class HistoryManager:
                         os.remove(os.path.join(FileManager.TEMP_DIR, file))
                     except:
                         pass
+        
+        if os.path.exists(HISTORY_FILE):
+            os.remove(HISTORY_FILE)

@@ -1,105 +1,106 @@
 from faster_whisper import WhisperModel
 from src.backend.scorer import AcousticScorer
 from src.backend.hardware import HardwareInfo
-from src.utils.diagnostics import get_logger
+from src.utils.diagnostics import get_logger, safe_execute
 import os
 import time
+import gc
+
+# --- DEFENSIVE IMPORT ---
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = get_logger()
 
 class AudioProcessor:
+    _model_cache = {}
+
     def __init__(self):
         self.scorer = AcousticScorer()
         self.hw = HardwareInfo()
 
-    def load_model(self, tier="Balanced"):
+    @safe_execute(default_val=None, log_msg="Whisper Load Error")
+    def get_model(self, tier="Balanced"):
         """
-        Loads model with AUTOMATIC FALLBACK.
-        If 'Pro' fails, it retries with 'Eco'.
+        Retrieves a cached model or loads a new one if it doesn't exist.
         """
         device = self.hw.get_optimal_device()
         compute_type = self.hw.get_compute_type(device)
         
-        # Map Tiers to Model Sizes
         tier_map = {
             "Eco (Low Spec)": "tiny.en",
             "Balanced (Mid Spec)": "small.en",
             "Pro (High Spec)": "medium.en"
         }
-        
-        target_model = tier_map.get(tier, "small.en")
-        
-        try:
-            logger.info(f"Attempting to load {target_model} on {device} ({compute_type})...")
-            return WhisperModel(target_model, device=device, compute_type=compute_type)
-            
-        except RuntimeError as e:
-            error_msg = str(e).lower()
-            # Catch Out-Of-Memory (OOM) errors specifically
-            if "out of memory" in error_msg or "cudnn" in error_msg:
-                logger.warning(f"CRASH DETECTED (Out of VRAM): {target_model} failed. Falling back to Eco Mode CPU.")
-                
-                # FALLBACK: Force CPU and Tiny Model silently on the server
-                return WhisperModel("tiny.en", device="cpu", compute_type="int8")
-            else:
-                raise e # Re-raise unknown errors
+        target_model_size = tier_map.get(tier, "small.en")
+        cache_key = f"{target_model_size}_{device}_{compute_type}"
 
+        if cache_key in AudioProcessor._model_cache:
+            return AudioProcessor._model_cache[cache_key]
+
+        if AudioProcessor._model_cache:
+            logger.info("Clearing Whisper model cache to free VRAM...")
+            AudioProcessor._model_cache.clear()
+            if TORCH_AVAILABLE and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+        logger.info(f"🚀 Loading Whisper {target_model_size} on {device} ({compute_type})...")
+        model = WhisperModel(target_model_size, device=device, compute_type=compute_type)
+        AudioProcessor._model_cache[cache_key] = model
+        return model
+
+    @safe_execute(default_val=(None, None, 0, "Processing Error"), log_msg="Interview Processing Error")
     def process_interview(self, audio_path, difficulty="Standard Interview", tier="Balanced"):
         if not os.path.exists(audio_path):
             return None, None, 0, "Error: Audio file not found."
 
-        # Instant Dead Air Check
         is_silent, silence_error = self.check_for_silence(audio_path)
         if is_silent:
             return None, None, 0, silence_error
             
         start_time = time.time()
         
-        try:
-            # Load model (with self-healing)
-            model = self.load_model(tier)
+        # Load model (with caching)
+        model = self.get_model(tier)
+        if not model:
+            return None, None, 0, "Error: Could not load Whisper model."
             
-            # Transcribe
-            segments, info = model.transcribe(
-                audio_path, 
-                beam_size=5,
-                initial_prompt="Umm, I-I think... well, actually... so your... it will delete."
-            )
-            
-            full_text = " ".join([seg.text for seg in segments]).strip()
+        # Transcribe
+        logger.info(f"🎙️ Transcribing {os.path.basename(audio_path)}...")
+        segments, info = model.transcribe(
+            audio_path, 
+            beam_size=5,
+            initial_prompt="Umm, I-I think... well, actually... so your..."
+        )
+        
+        full_text = " ".join([seg.text for seg in segments]).strip()
 
-            # Analyze
-            metrics = self.scorer.analyze_audio(audio_path, full_text, difficulty=difficulty)
-            
-            if metrics.get("error"):
-                logger.error(f"Analysis Error: {metrics['error']}")
-                return full_text, None, 0, metrics["error"]
+        # Analyze
+        metrics = self.scorer.analyze_audio(audio_path, full_text, difficulty=difficulty)
+        
+        if metrics.get("error"):
+            logger.error(f"Analysis Error: {metrics['error']}")
+            return full_text, None, 0, metrics["error"]
 
-            total_time = time.time() - start_time
-            logger.info(f"Success: Processed in {total_time:.2f}s")
-            
-            return full_text, metrics, total_time, None
+        total_time = time.time() - start_time
+        logger.info(f"✅ Success: Processed in {total_time:.2f}s")
+        
+        return full_text, metrics, total_time, None
 
-        except Exception as e:
-            logger.error(f"Critical Pipeline Error: {str(e)}")
-            return None, None, 0, f"Processing Failed: {str(e)}"
-
+    @safe_execute(default_val=(True, "Audio check failed"), log_msg="Silence Check Error")
     def check_for_silence(self, audio_path):
-        """
-        Fast pre-check to ensure the audio actually contains speech.
-        """
         import librosa
         import numpy as np
         
-        try:
-            y, sr = librosa.load(audio_path, sr=16000)
-            trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
-            active_duration = len(trimmed_audio) / sr
+        y, sr = librosa.load(audio_path, sr=16000)
+        trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
+        active_duration = len(trimmed_audio) / sr
+        
+        if active_duration < 1.0:
+            return True, "Microphone did not pick up enough audio. Please try again."
             
-            if active_duration < 1.5:
-                return True, "Voice recording error: System was not able to hear you clearly. Please check your microphone."
-                
-            return False, None
-            
-        except Exception as e:
-            return True, f"Error reading audio file: {e}"
+        return False, None

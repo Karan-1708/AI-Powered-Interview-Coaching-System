@@ -26,3 +26,6 @@ logs/
 models/
 *.bin
 *.gguf
+
+.claude/
+report_context.md

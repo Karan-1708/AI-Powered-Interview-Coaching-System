@@ -1,11 +1,45 @@
 import os
 import markdown
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    pass
 from fpdf import FPDF
 
 class PDFGenerator:
     @staticmethod
+    def clean_unicode(text):
+        """
+        Replaces 'smart' quotes and other non-latin-1 characters 
+        with standard PDF-safe equivalents.
+        """
+        if not text:
+            return ""
+        
+        # Mapping of common 'smart' characters to standard equivalents
+        replacements = {
+            '\u2018': "'",  # Left single quote
+            '\u2019': "'",  # Right single quote
+            '\u201c': '"',  # Left double quote
+            '\u201d': '"',  # Right double quote
+            '\u2013': "-",  # En dash
+            '\u2014': "--", # Em dash
+            '\u2026': "...", # Ellipsis
+        }
+        
+        for unicode_char, ascii_char in replacements.items():
+            text = text.replace(unicode_char, ascii_char)
+            
+        # Last resort: encode to latin-1 and ignore anything that fails
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+
+    @staticmethod
     def generate_report(job_title, industry, metrics_data, final_feedback, full_transcript, output_path):
         try:
+            # 1. Sanitize all incoming LLM text immediately
+            final_feedback = PDFGenerator.clean_unicode(final_feedback)
+            full_transcript = PDFGenerator.clean_unicode(full_transcript)
+
             pdf = FPDF()
             pdf.add_page()
             pdf.set_auto_page_break(auto=True, margin=15)
@@ -17,7 +51,6 @@ class PDFGenerator:
             
             pdf.set_font("helvetica", "I", 12)
             pdf.set_text_color(100, 100, 100)
-            # Capitalize the inputs so "helpdesk" becomes "Helpdesk"
             pdf.cell(0, 8, f"Target Role: {job_title.title()} | Industry: {industry.title()}", ln=True, align="C")
             pdf.ln(10)
             
@@ -37,11 +70,9 @@ class PDFGenerator:
             pdf.ln(5)
             
             # --- PARSE LLM MARKDOWN ---
-            # Convert Markdown to HTML, then replace strong tags with b tags for fpdf2 compatibility
             feedback_html = markdown.markdown(final_feedback)
+            # fpdf2 prefers <b> over <strong>
             feedback_html = feedback_html.replace("<strong>", "<b>").replace("</strong>", "</b>")
-            
-            # We don't parse transcript_html through Markdown because we already hardcoded HTML into it in app.py!
             
             # --- RENDER FEEDBACK ---
             feedback_section = f"""
@@ -50,7 +81,7 @@ class PDFGenerator:
             """
             pdf.write_html(feedback_section)
             
-            # --- RENDER TRANSCRIPT (On a new page to prevent awkward cutting) ---
+            # --- RENDER TRANSCRIPT ---
             pdf.add_page()
             transcript_section = f"""
             <h2 style="color: #2c3e50;">Session Transcript</h2>

@@ -1,97 +1,120 @@
-import ollama
-import time
-from src.utils.diagnostics import get_logger
+import os
+import requests
+import json
+from src.utils.diagnostics import get_logger, safe_execute
 
 logger = get_logger()
 
 class LLMClient:
-    # --- DYNAMIC MODEL ROUTING ---
-    MODEL_MAP = {
-        "Eco": "llama3.2",            # 3B params: Runs beautifully on 8GB RAM laptops
-        "Balanced": "llama3.1",       # 8B params: The standard, great for 16GB RAM
-        "Pro": "mistral-nemo"         # 12B params: Heavy, highly nuanced, for 32GB+ RAM
-    }
-
-    def __init__(self, tier_string="Balanced"):
-        """
-        Initializes the Ollama connection and dynamically selects/pulls 
-        the best model based on the user's hardware tier.
-        """
-        self.model_name = self._determine_model(tier_string)
-        self._verify_and_pull()
-
-    def _determine_model(self, tier_string):
-        """Parses the Streamlit dropdown string to find the base tier."""
-        for key in self.MODEL_MAP.keys():
-            if key in tier_string:
-                return self.MODEL_MAP[key]
-        return self.MODEL_MAP["Balanced"] # Default fallback
-
-    def _verify_and_pull(self):
-        """Checks if the model is downloaded. If not, pulls it automatically."""
-        try:
-            # Fetch the list from the local server
-            list_response = ollama.list()
-            
-            # Safely parse the response (handles both old Dicts and new Pydantic Objects)
-            if hasattr(list_response, 'models'):
-                installed_models = [m.model for m in list_response.models]
-            elif isinstance(list_response, dict):
-                installed_models = [m.get('name', m.get('model', '')) for m in list_response.get('models', [])]
+    def __init__(self, provider: str, model_name: str, compute_type: str, api_key: str = None):
+        self.provider = provider
+        self.model_name = model_name
+        self.compute_type = compute_type
+        self.api_key = api_key.strip() if api_key else None
+        
+        # --- ROBUST OLLAMA HOST DETECTION ---
+        if self.provider == "Local (Ollama)":
+            env_host = os.getenv("OLLAMA_HOST")
+            if env_host:
+                self.ollama_host = env_host
             else:
-                installed_models = []
+                working_host = "http://127.0.0.1:11434" # Safest default
+                for host in ["http://host.docker.internal:11434", "http://127.0.0.1:11434", "http://localhost:11434"]:
+                    try:
+                        if requests.get(f"{host}/api/tags", timeout=1).status_code == 200:
+                            working_host = host
+                            break
+                    except: continue
+                self.ollama_host = working_host
+        else:
+            self.ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        
+        logger.info(f"LLMClient initialized for {provider} using {self.ollama_host}")
+
+    @safe_execute(default_val=(False, "Connection Exception"), log_msg="LLM Test Error")
+    def test_connection(self):
+        """Pings the selected provider to see if it's alive."""
+        if self.provider == "Local (Ollama)":
+            try:
+                res = requests.get(f"{self.ollama_host}/api/tags", timeout=5)
+                if res.status_code == 200:
+                    models = [m['name'] for m in res.json().get('models', [])]
+                    if any(self.model_name in m for m in models):
+                        return True, f"🟢 Ollama is active. Found model: {self.model_name}"
+                    return False, f"🔴 Ollama active, but model '{self.model_name}' not found. Download it first."
+                return False, f"🔴 Ollama returned error: {res.status_code}"
+            except Exception as e:
+                return False, f"🔴 Ollama Connection Failed: {str(e)}"
+        
+        elif self.provider == "External API (Frontier Models)":
+            if not self.api_key:
+                return False, "🔴 API Key is missing. Please enter it in the sidebar."
             
-            # Check if our target model is in the list
-            if not any(self.model_name in m for m in installed_models):
-                logger.warning(f"Model '{self.model_name}' not found locally. Initiating auto-pull...")
-                ollama.pull(self.model_name)
-                logger.info(f"Successfully downloaded {self.model_name}!")
-            else:
-                logger.info(f"Verified {self.model_name} is ready for inference.")
+            # Simple probe based on service
+            try:
+                if "gemini" in self.model_name.lower():
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
+                    res = requests.get(url, timeout=5)
+                    if res.status_code == 200: return True, "🟢 Google Gemini API connection verified."
+                    return False, f"🔴 Gemini API Error: {res.json().get('error', {}).get('message', 'Invalid Key')}"
                 
-        except Exception as e:
-            logger.error(f"Failed to connect to Ollama. Actual Error: {e}")
-            raise ConnectionError(f"Ollama connection failed. Detail: {str(e)}")
+                # Default success for others as deep probing is expensive
+                return True, f"🟢 Config set for {self.model_name}. Attempting connection..."
+            except Exception as e:
+                return False, f"🔴 API Probe Failed: {str(e)}"
 
-    def generate_response(self, system_prompt, user_message, chat_history=None):
-        """Sends the context and current answer to the LLM and retrieves the response."""
-        if chat_history is None:
-            chat_history = []
+        return False, "🔴 Unknown Provider Configured."
 
-        messages = [{"role": "system", "content": system_prompt}]
+    @safe_execute(default_val="Error: LLM Generation Failed", log_msg="LLM Generation Error")
+    def generate_response(self, system_prompt: str, user_message: str, chat_history: list = None):
+        """Standardized generation entry point."""
+        history = chat_history if chat_history else []
         
-        for msg in chat_history:
-            messages.append(msg)
-            
-        messages.append({"role": "user", "content": user_message})
+        if self.provider == "Local (Ollama)":
+            return self._generate_ollama(system_prompt, user_message, history)
+        elif "gemini" in self.model_name.lower():
+            return self._generate_gemini(system_prompt, user_message, history)
+        else:
+            return "Error: Provider or Model not yet supported for direct generation."
 
+    def _generate_ollama(self, system, user, history):
+        url = f"{self.ollama_host}/api/chat"
+        messages = [{"role": "system", "content": system}]
+        for msg in history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": user})
+        
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": 0.7, "num_predict": 300}
+        }
+        
+        response = requests.post(url, json=payload, timeout=60)
+        if response.status_code == 200:
+            return response.json()["message"]["content"]
+        return f"Ollama Error: {response.text}"
+
+    def _generate_gemini(self, system, user, history):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+        
+        contents = []
+        for msg in history:
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+        
+        # Add system instruction (Gemini 1.5 style)
+        payload = {
+            "contents": contents + [{"role": "user", "parts": [{"text": f"SYSTEM INSTRUCTION: {system}\n\nUSER MESSAGE: {user}"}]}],
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 500}
+        }
+        
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code != 200:
+            return f"Gemini API Error: {response.json().get('error', {}).get('message', 'Unknown Error')}"
+        
         try:
-            start_time = time.time()
-            response = ollama.chat(model=self.model_name, messages=messages)
-            duration = time.time() - start_time
-            logger.info(f"Generated response using {self.model_name} in {duration:.2f}s")
-            
-            # Safely extract the text content
-            if hasattr(response, 'message'):
-                return response.message.content
-            return response['message']['content']
-            
-        except Exception as e:
-            logger.error(f"LLM Generation Error: {e}")
-            return f"System Error: Unable to generate response from AI Coach. Detail: {e}"
-
-if __name__ == "__main__":
-    # --- QUICK DIAGNOSTIC TEST ---
-    print("🔌 Initiating dynamic LLM connection test...")
-    try:
-        client = LLMClient(tier_string="Eco")
-        print(f"\n🧠 Sending test prompt to {client.model_name}...")
-        
-        test_system = "You are a strict technical lead. Respond in exactly one short sentence."
-        test_user = "Hello, I am ready for the interview."
-        
-        reply = client.generate_response(system_prompt=test_system, user_message=test_user)
-        print(f"\n🤖 AI Interviewer: {reply}\n")
-        print("✅ Handshake successful!")
-    except Exception as e:
-        print(f"\n❌ Handshake failed: {e}")
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            return "Gemini Error: Unexpected response format from API."
