@@ -259,8 +259,19 @@ def main():
                     st.markdown("### 2. Select Interview Stage")
                     selected_round = st.selectbox("Which round are you preparing for?", st.session_state['rounds'])
                     
+                    st.divider()
+                    st.markdown("### 3. Choose Interviewer Persona")
+                    selected_persona_label = st.selectbox(
+                        "Select the Interviewer Style:", 
+                        list(Personas.PERSONA_PROMPTS.keys()),
+                        help="This determines the AI's tone, aggression, and focus area."
+                    )
+                    
                     if st.button("Generate Custom Questions", type="primary"):
                         with st.spinner(f"🧠 API is writing questions for the {selected_round}..."):
+                            
+                            st.session_state['selected_persona_label'] = selected_persona_label
+                            st.session_state['selected_round'] = selected_round
                             
                             round_type = selected_round.split(" ")[0]
                             persona_config = Personas.get_interviewer_by_type(round_type, seniority)
@@ -309,12 +320,18 @@ def main():
                 st.info(f"⏱️ **Stage Context:** {info['meaning']} | **Interviewer:** {info['recommended_persona']}")
 
                 if 'chat_history' not in st.session_state:
-                    sys_prompt = Personas.get_interview_sys_prompt(
-                        info['recommended_persona'], 
-                        selected_round, 
-                        seniority, 
-                        job_title, 
-                        industry
+                    # Get the base prompt from our new mapping
+                    selected_persona_label = st.session_state.get('selected_persona_label', 'Standard HR')
+                    base_prompt = Personas.PERSONA_PROMPTS.get(selected_persona_label, Personas.PERSONA_PROMPTS['Standard HR'])
+                    
+                    selected_round = st.session_state.get('selected_round', 'General Interview')
+                    
+                    sys_prompt = (
+                        f"{base_prompt} "
+                        f"You are conducting a {selected_round} interview for a {seniority} {job_title} role in the {industry} industry. "
+                        f"Ask ONE question at a time. Keep your questions concise (1-2 sentences). "
+                        f"Base your follow-ups strictly on the candidate's previous answer. "
+                        f"Do not break character. Do not provide feedback yet."
                     )
                     
                     st.session_state['system_prompt'] = sys_prompt
@@ -476,7 +493,7 @@ def main():
                     st.info("💡 Note: A conversational pace of 130-160 WPM is considered highly confident and professional.")
                     
                 with tab_transcript:
-                    st.markdown(st.session_state['full_transcript'])
+                    st.markdown(st.session_state['full_transcript'], unsafe_allow_html=True)
                     
                 # --- PDF REPORT GENERATOR ---
                 st.divider()
@@ -522,62 +539,98 @@ def main():
         with tab_history:
             st.header("📈 Your Coaching Progress")
             
-            # Load history using the HistoryManager
-            try:
-                history_data = HistoryManager.load_history()
-            except Exception:
-                history_data = []
+            # --- 1. LOAD & SORT HISTORY ---
+            def get_sorted_history():
+                """Loads and sorts history by date (oldest to newest for plotting)."""
+                try:
+                    data = HistoryManager.load_history()
+                    if not data: return []
+                    # Sort by timestamp string (ISO-like format: YYYY-MM-DD HH:MM)
+                    return sorted(data, key=lambda x: x['timestamp'])
+                except Exception:
+                    return []
+
+            history_data = get_sorted_history()
 
             if not history_data:
                 st.info("No session history found. Complete your first practice interview to see your progress here!")
             else:
-                # Convert the JSON list to a Pandas DataFrame for easy graphing
                 df = pd.DataFrame(history_data)
+                df['timestamp'] = pd.to_datetime(df['timestamp']) # Ensure it's datetime for plotting
 
-                # --- TOP LEVEL METRICS ---
-                total_sessions = len(df)
-                avg_wpm_all = df['wpm'].mean()
-                total_fillers_all = df['fillers'].sum()
+                # --- 2. SESSION COMPARISON ANALYTICS (DELTAS) ---
+                st.subheader("📊 Session Comparison")
+                
+                if len(history_data) >= 2:
+                    current_session = history_data[-1]
+                    previous_session = history_data[-2]
+                    
+                    def calc_delta(curr, prev):
+                        if prev == 0: return 0
+                        return ((curr - prev) / prev) * 100
 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Practice Sessions", total_sessions)
-                col2.metric("All-Time Average Pace", f"{avg_wpm_all:.0f} WPM")
-                col3.metric("Total Fillers Tracked", total_fillers_all)
+                    # Calculate Deltas
+                    wpm_delta = calc_delta(current_session['wpm'], previous_session['wpm'])
+                    filler_delta = calc_delta(current_session['fillers'], previous_session['fillers'])
+                    
+                    # Layout Metrics
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # WPM Metric (Increasing is usually good)
+                    col1.metric(
+                        label="Avg WPM Change",
+                        value=f"{current_session['wpm']:.1f}",
+                        delta=f"{wpm_delta:+.1f}% vs last",
+                        delta_color="normal" 
+                    )
+                    
+                    # Fillers Metric (Decreasing is GOOD - use 'inverse' for green on negative)
+                    col2.metric(
+                        label="Filler Word Change",
+                        value=current_session['fillers'],
+                        delta=f"{filler_delta:+.1f}% vs last",
+                        delta_color="inverse" 
+                    )
+                    
+                    col3.metric("Current Mode", current_session['mode'])
+                    st.caption("💡 *Note: A green delta for Filler Words indicates a reduction, which is an improvement!*")
+                else:
+                    st.info("💡 Practice at least twice to see session-to-session comparison analytics and deltas.")
 
                 st.divider()
 
-                # --- PLOTLY INTERACTIVE CHARTS ---
-                col_chart1, col_chart2 = st.columns(2)
-
-                with col_chart1:
-                    st.subheader("🗣️ Pacing Over Time (WPM)")
-                    # Draw a line chart for WPM
-                    fig_wpm = px.line(
-                        df, x='timestamp', y='wpm', markers=True,
-                        title="Words Per Minute (Target: 130-160)",
-                        labels={"timestamp": "Session Date", "wpm": "WPM"}
+                # --- 3. TREND VISUALIZATION (MULTI-LINE CHART) ---
+                st.subheader("📈 Performance Trends")
+                
+                if len(history_data) >= 2:
+                    # Melt the dataframe for multi-line plotting if needed, 
+                    # but Plotly Express can handle multiple Y columns directly.
+                    fig = px.line(
+                        df, 
+                        x='timestamp', 
+                        y=['wpm', 'fillers'],
+                        markers=True,
+                        title="WPM vs. Filler Words Over Time",
+                        labels={"value": "Count / Rate", "timestamp": "Session Date", "variable": "Metric"},
+                        color_discrete_map={"wpm": "#00CC96", "fillers": "#EF553B"}
                     )
-                    # Add a green "Ideal Range" band in the background!
-                    fig_wpm.add_hrect(y0=130, y1=160, line_width=0, fillcolor="green", opacity=0.1)
-                    fig_wpm.update_yaxes(tickformat="d")
-                    st.plotly_chart(fig_wpm, width='stretch')
-
-                with col_chart2:
-                    st.subheader("🛑 Filler Words Over Time")
-                    # Draw a bar chart for Filler Words, colored by severity
-                    fig_fillers = px.bar(
-                        df, x='timestamp', y='fillers',
-                        title="Total Filler Words (Um, Uh, Like)",
-                        labels={"timestamp": "Session Date", "fillers": "Filler Count"},
-                        color='fillers', color_continuous_scale="Reds"
+                    
+                    fig.update_layout(
+                        hovermode="x unified",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    st.plotly_chart(fig_fillers, width='stretch')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    # Simple single chart for first session
+                    st.caption("Trend charts will expand as you complete more sessions.")
+                    fig_simple = px.scatter(df, x='timestamp', y='wpm', title="Initial Progress Point")
+                    st.plotly_chart(fig_simple, use_container_width=True)
 
                 st.divider()
 
-                # --- RAW DATA TABLE ---
-                st.subheader("📝 Raw Session Logs")
-                st.dataframe(df, width='stretch', hide_index=True)
+                # --- 4. RAW LOGS ---
+                with st.expander("📝 View Detailed Session Logs"):
+                    st.dataframe(df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error("🚨 A critical application error occurred.")
