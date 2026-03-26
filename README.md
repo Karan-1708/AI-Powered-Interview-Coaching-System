@@ -48,7 +48,7 @@ The **AI-Powered Interview Coaching System** is a locally hosted, privacy-first 
 ### Option 1: Local Development (Conda)
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-repo/ai-interview-coach.git
+   git clone https://github.com/Karan-1708/AI-Powered-Interview-Coaching-System.git
    cd ai-interview-coach
    ```
 2. **Create the environment:**
@@ -58,11 +58,11 @@ The **AI-Powered Interview Coaching System** is a locally hosted, privacy-first 
    ```
 3. **Run the Backend API:**
    ```bash
-   $env:PYTHONPATH = "."; python src/api/server.py
+   python src/api/server.py
    ```
 4. **Run the Streamlit UI:**
    ```bash
-   $env:PYTHONPATH = "."; streamlit run app.py
+   streamlit run app.py
    ```
 
 ### Option 2: Docker Compose (Recommended for GPU)
