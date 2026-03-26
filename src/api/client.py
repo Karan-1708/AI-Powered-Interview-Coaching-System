@@ -32,12 +32,12 @@ class APIClient:
 
     @staticmethod
     @safe_execute(default_val=(None, None, None, "API Error"), log_msg="Audio Upload Error")
-    def process_audio(file_path, difficulty, tier):
+    def process_audio(file_path, difficulty, compute_mode):
         """Sends the audio file to the backend API for transcription and analysis."""
         url = f"{APIClient.BASE_URL}/process-audio"
         with open(file_path, "rb") as f:
             files = {"file": (os.path.basename(file_path), f, "audio/wav")}
-            data = {"difficulty": difficulty, "tier": tier}
+            data = {"difficulty": difficulty, "compute_mode": compute_mode}
             response = requests.post(
                 url, 
                 files=files, 

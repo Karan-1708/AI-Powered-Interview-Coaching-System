@@ -1,4 +1,27 @@
 import os
+import sys
+
+# --- PATH INJECTION ---
+# Ensures the project root is always at the top of sys.path
+root_dir = os.path.dirname(os.path.abspath(__file__))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+# Special Case: Sometimes Streamlit environment shadows 'src'
+# or prefers importing submodules directly from 'src'
+src_dir = os.path.join(root_dir, "src")
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+try:
+    from src.utils.diagnostics import get_logger, log_system_info
+except ModuleNotFoundError:
+    # Fallback for environments that treat 'src' as the project root
+    from utils.diagnostics import get_logger, log_system_info
+
+log_system_info()
+logger = get_logger()
+
 import platform
 import shutil
 import json
@@ -9,17 +32,24 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# --- 1. ENVIRONMENT & LOGGING ---
-from src.utils.diagnostics import get_logger, log_system_info
-log_system_info()
-logger = get_logger()
-
 # --- 2. BACKEND & API ---
 from src.api.client import APIClient
 from src.ui.recorder import record_audio
 from src.utils.file_manager import FileManager
 from src.utils.pdf_generator import PDFGenerator
 from src.utils.history import HistoryManager
+from src.backend.personas import Personas
+
+# Fallback imports if above fails (Streamlit pathing quirks)
+try:
+    from src.api.client import APIClient
+except ModuleNotFoundError:
+    from api.client import APIClient
+    from ui.recorder import record_audio
+    from utils.file_manager import FileManager
+    from utils.pdf_generator import PDFGenerator
+    from utils.history import HistoryManager
+    from backend.personas import Personas
 
 # Ensure directories are ready
 FileManager.initialize_directories()
@@ -139,12 +169,12 @@ def main():
             
         else:
             api_service = st.sidebar.selectbox("API Target", ["OpenAI", "Anthropic", "Google Gemini"])
-            selected_model = st.sidebar.text_input("Model String", placeholder="e.g., gpt-4o, claude-3-sonnet")
+            selected_model = st.sidebar.text_input("Model String", placeholder="e.g., gpt-4o, claude-3-5-sonnet")
             api_key = st.sidebar.text_input("Secret API Key", type="password")
             
         # Save these settings to the session state
         st.session_state['engine_config'] = {
-            "provider": provider,
+            "provider": provider if provider == "Local (Ollama)" else api_service,
             "model": selected_model,
             "compute": compute_target,
             "api_key": api_key
@@ -233,24 +263,12 @@ def main():
                         with st.spinner(f"🧠 API is writing questions for the {selected_round}..."):
                             
                             round_type = selected_round.split(" ")[0]
-                            
-                            if "HR" in round_type or "Screen" in round_type or "First" in round_type:
-                                meaning = "A standard, efficient first-round interview. Focus on high-level experience and culture fit."
-                                rec_mode = "Standard Interview"
-                                rec_persona = "🤝 Friendly HR Recruiter (Focuses on soft skills & culture fit)"
-                            elif "Technical" in round_type or "System" in round_type or "Code" in round_type:
-                                meaning = "Common for technical assessments. Expect in-depth scrutiny and follow-ups."
-                                rec_mode = "Technical / Complex"
-                                rec_persona = "💼 Strict Technical Lead (Focuses purely on accuracy & efficiency)"
-                            else: 
-                                meaning = "Advanced panel or final stage interview. High pressure."
-                                rec_persona = "🔥 Stress Interviewer (Highly critical, looks for flaws & hesitations)"
-                                rec_mode = "Presentation" if seniority == "Executive" else "Technical / Complex"
+                            persona_config = Personas.get_interviewer_by_type(round_type, seniority)
 
                             st.session_state['round_info'] = {
-                                "meaning": meaning, 
-                                "recommended_mode": rec_mode,
-                                "recommended_persona": rec_persona
+                                "meaning": persona_config['meaning'], 
+                                "recommended_mode": persona_config['recommended_mode'],
+                                "recommended_persona": persona_config['persona']
                             }
                             
                             q_prompt = f"Generate 3 highly specific interview questions for a {seniority} {job_title} during the '{selected_round}' round. Output ONLY a Python-style list of strings."
@@ -291,7 +309,13 @@ def main():
                 st.info(f"⏱️ **Stage Context:** {info['meaning']} | **Interviewer:** {info['recommended_persona']}")
 
                 if 'chat_history' not in st.session_state:
-                    sys_prompt = f"You are acting as a {info['recommended_persona']} conducting a {selected_round} interview for a {seniority} {job_title} role in the {industry} industry. Your goal is to assess the candidate's skills based on the persona. Ask ONE question at a time. Keep your questions concise (1-2 sentences). Base your follow-ups strictly on the candidate's previous answer. Do not break character. Do not provide feedback yet."
+                    sys_prompt = Personas.get_interview_sys_prompt(
+                        info['recommended_persona'], 
+                        selected_round, 
+                        seniority, 
+                        job_title, 
+                        industry
+                    )
                     
                     st.session_state['system_prompt'] = sys_prompt
                     st.session_state['chat_history'] = []
@@ -410,30 +434,13 @@ def main():
                             speaker = "Interviewer" if msg['role'] == "assistant" else "Candidate"
                             full_transcript += f"<b>{speaker}:</b> {msg['content']}<br><br>\n"
                             
-                        # 2. Strict Markdown Headers (No Numbers!)
-                        final_prompt = f"""
-                        You are a senior hiring manager. Review this interview transcript for a {seniority} {job_title} role in the {industry} industry.
-                        
-                        TRANSCRIPT:
-                        {full_transcript}
-                        
-                        Provide a comprehensive evaluation. Format your response strictly using these Markdown headers (Do NOT use numbered lists for the section titles):
-                        
-                        ### Overall Impression
-                        (1 short paragraph)
-                        
-                        ### Key Strengths
-                        (Use standard bullet points)
-                        
-                        ### Areas for Improvement
-                        (Use standard bullet points)
-                        
-                        ### STAR Framework Analysis
-                        (Short paragraph evaluating if they used Situation, Task, Action, Result)
-                        """
+                        # 2. Use Personas for prompt generation
+                        final_prompt = Personas.get_final_feedback_prompt(
+                            seniority, job_title, industry, full_transcript
+                        )
                         
                         final_feedback = APIClient.generate_response(
-                            system_prompt="You are an expert, direct, and highly constructive career coach.", 
+                            system_prompt=Personas.AI_COACH['system_prompt'], 
                             user_message=final_prompt, 
                             chat_history=[], 
                             engine_config=st.session_state['engine_config']
@@ -573,10 +580,15 @@ def main():
                 st.dataframe(df, width='stretch', hide_index=True)
 
     except Exception as e:
-        st.error("🚨 An unexpected error occurred.")
-        st.code(str(e))
-        logger.critical(f"Global Crash: {e}", exc_info=True)
+        st.error("🚨 A critical application error occurred.")
+        with st.expander("Technical Details"):
+            st.code(traceback.format_exc())
+        logger.critical(f"Global UI Crash: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    FileManager.initialize_directories()
-    main()
+    try:
+        FileManager.initialize_directories()
+        main()
+    except Exception as e:
+        # Emergency fallback if main fails before Streamlit initializes
+        print(f"CRITICAL SYSTEM FAILURE: {e}")

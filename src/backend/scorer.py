@@ -103,8 +103,11 @@ class AcousticScorer:
             metrics["error"] = f"Analysis Failed: {str(e)}"
             return metrics
 
+    @safe_execute(default_val=None, log_msg="Tone Classification Error")
     def _classify_tone(self, metrics):
         """Pure logic for emotional labeling."""
+        # Logic here...
+        # (Assuming the original implementation is fine, just wrapping it)
         is_fast = metrics["wpm"] > 160
         is_slow = metrics["wpm"] < 110
         is_loud = metrics["energy_avg"] > 0.06
@@ -114,23 +117,24 @@ class AcousticScorer:
 
         if is_fast and is_shaky:
             if is_loud:
-                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "😠 Angry/Intense", "Volume & Pitch high. Too aggressive?", "off"
+                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Angry/Intense", "Volume & Pitch high. Too aggressive?", "off"
             else:
-                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "😰 Nervous", "Fast & Shaky. Deep breaths needed.", "off"
+                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Nervous", "Fast & Shaky. Deep breaths needed.", "off"
         elif is_fast and is_loud and not is_shaky:
-             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "🤩 Energetic", "Great energy! Passionate delivery.", "normal"
+             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Energetic", "Great energy! Passionate delivery.", "normal"
         elif is_monotone:
             if is_loud:
-                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "👔 Formal/Stiff", "Authoritative but slightly robotic.", "normal"
+                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Formal/Stiff", "Authoritative but slightly robotic.", "normal"
             elif is_quiet:
-                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "😴 Bored/Sad", "Low energy. Project more voice.", "off"
+                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Bored/Sad", "Low energy. Project more voice.", "off"
             else:
-                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "🤖 Monotone", "Vary your pitch to engage listeners.", "off"
+                metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Monotone", "Vary your pitch to engage listeners.", "off"
         elif not is_fast and not is_slow and not is_quiet:
-             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "🧘 Calm/Confident", "Steady, resonant, and controlled.", "normal"
+             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Calm/Confident", "Steady, resonant, and controlled.", "normal"
         else:
-             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "😐 Casual/Conversational", "Relaxed pace and volume.", "normal"
+             metrics["tone_label"], metrics["feedback"]["tone"], metrics["feedback"]["tone_status"] = "Casual/Conversational", "Relaxed pace and volume.", "normal"
 
+    @safe_execute(default_val=None, log_msg="Feedback Compilation Error")
     def _compile_feedback(self, metrics, limits, duration, word_count):
         """Aggregates all feedback strings."""
         density_tip = self._assess_content_density(duration, word_count)

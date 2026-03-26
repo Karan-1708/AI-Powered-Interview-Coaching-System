@@ -4,12 +4,12 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: interview_api
-    # Enables hot-reloading inside the container
     command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-key-12345}
     volumes:
       - ./src:/app/src
       - ./temp_data:/app/temp_data
@@ -33,7 +33,9 @@ services:
       - api
     environment:
       - API_URL=http://api:8000
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-key-12345}
     volumes:
       - ./app.py:/app/app.py
       - ./src:/app/src
       - ./temp_data:/app/temp_data
+      - ./logs:/app/logs

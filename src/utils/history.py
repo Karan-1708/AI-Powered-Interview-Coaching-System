@@ -16,8 +16,8 @@ class HistoryManager:
         
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "wpm": wpm,
-            "fillers": fillers,
+            "wpm": round(float(wpm), 1),
+            "fillers": int(fillers),
             "tone": tone,
             "mode": mode
         }
@@ -25,18 +25,25 @@ class HistoryManager:
         history = HistoryManager.load_history()
         history.append(entry)
         
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history, f, indent=4)
-            
-        logger.info(f"Session history successfully saved for mode: {mode}")
+        try:
+            with open(HISTORY_FILE, "w") as f:
+                json.dump(history, f, indent=4)
+            logger.info(f"Session history successfully saved for mode: {mode}")
+        except Exception as e:
+            logger.error(f"Failed to write history to disk: {e}")
+            raise
 
     @staticmethod
     @safe_execute(default_val=[], log_msg="Load History Error")
     def load_history():
         """Loads the session history, handling missing or corrupted files."""
         if os.path.exists(HISTORY_FILE):
-            with open(HISTORY_FILE, "r") as f:
-                return json.load(f)
+            try:
+                with open(HISTORY_FILE, "r") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.error(f"History file corrupted or unreadable: {e}")
+                return []
         return []
 
     @staticmethod
@@ -45,23 +52,21 @@ class HistoryManager:
         """Hunts down and deletes all saved session history data."""
         from src.utils.file_manager import FileManager
         
-        # Check the logs directory for any history JSON files and wipe them
-        if os.path.exists(FileManager.LOG_DIR):
-            for file in os.listdir(FileManager.LOG_DIR):
-                if file.endswith('.json'):
-                    try:
-                        os.remove(os.path.join(FileManager.LOG_DIR, file))
-                    except:
-                        pass
-        
-        # Also check the temp directory just in case it was saved there
-        if os.path.exists(FileManager.TEMP_DIR):
-            for file in os.listdir(FileManager.TEMP_DIR):
-                if file.endswith('.json'):
-                    try:
-                        os.remove(os.path.join(FileManager.TEMP_DIR, file))
-                    except:
-                        pass
+        # Helper to safely remove JSON files from specific directories
+        def clean_json_from_dir(directory):
+            if os.path.exists(directory):
+                for file in os.listdir(directory):
+                    if file.endswith('.json'):
+                        try:
+                            os.remove(os.path.join(directory, file))
+                        except Exception as e:
+                            logger.warning(f"Failed to delete {file} from {directory}: {e}")
+
+        clean_json_from_dir(FileManager.LOG_DIR)
+        clean_json_from_dir(FileManager.TEMP_DIR)
         
         if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
+            try:
+                os.remove(HISTORY_FILE)
+            except Exception as e:
+                logger.error(f"Failed to delete core history file: {e}")

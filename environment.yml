@@ -6,21 +6,22 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-    - streamlit
-    - requests
-    - pandas
-    - plotly
-    - fpdf2
-    - fastapi
-    - uvicorn
-    - python-multipart
-    - pydantic
-    - faster-whisper
+    - streamlit>=1.30.0
+    - requests>=2.31.0
+    - pandas>=2.1.0
+    - plotly>=6.3.0
+    - fpdf2>=2.8.7
+    - fastapi>=0.109.0
+    - uvicorn>=0.27.0
+    - python-multipart>=0.0.9
+    - pydantic>=2.5.3
+    - faster-whisper>=1.2.1
     - torch
-    - librosa
-    - soundfile
-    - ollama
-    - pyttsx3
-    - psutil
-    - py-cpuinfo
-    - markdown
+    - torchaudio
+    - librosa>=0.11.0
+    - soundfile>=0.13.1
+    - ollama>=0.1.6
+    - pyttsx3>=2.90
+    - psutil>=5.9.8
+    - py-cpuinfo>=9.0.0
+    - markdown>=3.5.2

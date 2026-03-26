@@ -109,7 +109,7 @@ def get_hardware():
 def process_audio(
     file: UploadFile = File(...), 
     difficulty: str = Form("Standard Interview"), 
-    tier: str = Form("Balanced")
+    compute_mode: str = Form("CPU & RAM Core")
 ):
     """
     Transcribes an uploaded audio file and performs acoustic scoring.
@@ -118,7 +118,7 @@ def process_audio(
     Args:
         file (UploadFile): The .wav or .mp3 audio file to process.
         difficulty (str): The interview difficulty tier for scoring thresholds.
-        tier (str): The hardware tier (Eco, Balanced, Pro) for Whisper model selection.
+        compute_mode (str): The hardware target (NVIDIA GPU or CPU & RAM Core).
         
     Returns:
         dict: Transcription text, acoustic metrics (WPM, fillers, etc.), and processing duration.
@@ -135,7 +135,7 @@ def process_audio(
             shutil.copyfileobj(file.file, buffer)
             
         transcript, metrics, duration, error = processor.process_interview(
-            temp_path, difficulty=difficulty, tier=tier
+            temp_path, difficulty=difficulty, compute_mode=compute_mode
         )
         
         if error:

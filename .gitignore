@@ -27,5 +27,6 @@ models/
 *.bin
 *.gguf
 
-.claude/
+#personal files
 report_context.md
+commands.txt

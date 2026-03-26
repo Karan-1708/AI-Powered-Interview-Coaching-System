@@ -14,20 +14,61 @@ def setup_environment():
     if platform.system() == "Windows":
         try:
             import site
-            possible_paths = site.getsitepackages()
-            try: possible_paths.append(site.getusersitepackages())
+            # 1. Gather all potential site-packages locations
+            possible_site_packages = site.getsitepackages()
+            try: possible_site_packages.append(site.getusersitepackages())
             except: pass
-            for base_path in possible_paths:
-                cublas_bin = os.path.join(base_path, "nvidia", "cublas", "bin")
-                cudnn_bin = os.path.join(base_path, "nvidia", "cudnn", "bin")
-                if os.path.exists(os.path.join(cublas_bin, "cublas64_12.dll")):
-                    os.environ["PATH"] += os.pathsep + cublas_bin
-                    os.environ["PATH"] += os.pathsep + cudnn_bin
+            
+            # 2. Add current sys.path entries
+            for p in sys.path:
+                if "site-packages" in p and p not in possible_site_packages:
+                    possible_site_packages.append(p)
+
+            # 3. AGGRESSIVE: Search sibling conda environments
+            # This handles cases where libs are in 'ai-interview-coach' but server runs in 'base'
+            prefix = sys.prefix
+            # Try to find the 'envs' directory
+            envs_dirs = []
+            if "envs" in prefix:
+                envs_dirs.append(os.path.join(prefix.split("envs")[0], "envs"))
+            else:
+                envs_dirs.append(os.path.join(prefix, "envs"))
+            
+            for ed in envs_dirs:
+                if os.path.exists(ed):
+                    for env in os.listdir(ed):
+                        possible_site_packages.append(os.path.join(ed, env, "Lib", "site-packages"))
+
+            # 4. Search for NVIDIA bin folders in all gathered locations
+            nvidia_bins = []
+            for base_path in set(possible_site_packages):
+                if not base_path or not os.path.exists(base_path): continue
+                
+                # Check direct subfolders and 'nvidia' subfolder
+                for sub in [
+                    os.path.join("nvidia", "cublas", "bin"),
+                    os.path.join("nvidia", "cudnn", "bin"),
+                    os.path.join("nvidia", "cuda_runtime", "bin"),
+                    os.path.join("nvidia", "cuda_nvrtc", "bin"),
+                    "bin" # Some older or manual installs
+                ]:
+                    full_path = os.path.join(base_path, sub)
+                    if os.path.exists(full_path):
+                        if any(f.endswith(".dll") for f in os.listdir(full_path)):
+                            nvidia_bins.append(full_path)
+
+            # 5. Apply DLL directories and update PATH
+            if nvidia_bins:
+                for bin_path in set(nvidia_bins):
+                    if bin_path not in os.environ["PATH"]:
+                        os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+                    
                     if hasattr(os, "add_dll_directory"):
-                        os.add_dll_directory(cublas_bin)
-                        os.add_dll_directory(cudnn_bin)
-                    break
-        except Exception: pass
+                        try:
+                            os.add_dll_directory(bin_path)
+                        except Exception: pass
+        except Exception: 
+            pass
 
 # Run this once on import to ensure the environment is ready
 setup_environment()
@@ -49,10 +90,15 @@ if not logger.handlers:
     logger.addHandler(file_handler)
 
     # 2. Console Handler (Prints to your Terminal for live debugging)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter("%(levelname)s: %(message)s")
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
+    # Using sys.stdout.buffer to avoid encoding issues on some Windows terminals
+    try:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+    except Exception:
+        # Fallback if stream handler fails
+        pass
 
 def log_system_info():
     """Logs critical system stats on startup."""
@@ -65,16 +111,16 @@ def log_system_info():
         
         # Check for FFmpeg (Critical for Whisper audio parsing)
         if shutil.which("ffmpeg"):
-            logger.info("FFmpeg: Detected ✅")
+            logger.info("FFmpeg: Detected [OK]")
         else:
-            logger.warning("FFmpeg: NOT DETECTED ❌ (Some audio formats may fail)")
+            logger.warning("FFmpeg: NOT DETECTED [FAILED] (Some audio formats may fail)")
 
         # Check for Pillow (Required for PDF images)
         try:
             from PIL import Image
-            logger.info(f"Pillow: Detected ✅ (Version: {getattr(Image, '__version__', 'Unknown')})")
+            logger.info(f"Pillow: Detected [OK] (Version: {getattr(Image, '__version__', 'Unknown')})")
         except ImportError:
-            logger.warning("Pillow: NOT DETECTED ❌ (PDF image support disabled)")
+            logger.warning("Pillow: NOT DETECTED [FAILED] (PDF image support disabled)")
             
     except Exception as e:
         logger.error(f"Failed to log system info: {e}")
@@ -91,7 +137,10 @@ def safe_execute(default_val=None, log_msg="Execution Error"):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"{log_msg}: {e}", exc_info=True)
+                import traceback
+                # Get the last few lines of the traceback for the log
+                tb = traceback.format_exc()
+                logger.error(f"{log_msg} in '{func.__name__}': {str(e)}\n{tb}")
                 return default_val
         return wrapper
     return decorator
