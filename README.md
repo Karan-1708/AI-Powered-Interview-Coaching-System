@@ -90,7 +90,7 @@ $env:PYTHONPATH = "."; pytest tests/
 
 ## 📜 License
 This project is source-available under the **PolyForm Noncommercial License 1.0.0**. 
-- **Copyright Holders:** Karanveer Singh, Amel Korandippillil Sunil, Santiago Cardenas Vargas.
+- **Copyright Holders:** Karanveer Singh, Amel Korandippillil Sunil, Orlando Santiago Cardenas Vargas.
 - **Usage:** Free for non-commercial and educational use with prior permission.
 
 ---
