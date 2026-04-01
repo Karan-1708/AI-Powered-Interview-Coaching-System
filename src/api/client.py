@@ -9,8 +9,8 @@ logger = get_logger()
 
 class APIClient:
     # Check for a 'BACKEND_URL' in Streamlit Secrets first, otherwise use local
-    BASE_URL = st.secrets.get("BACKEND_URL", "https://biforked-realizingly-alyssa.ngrok-free.dev")
-    INTERNAL_API_KEY = st.secrets.get("INTERNAL_API_KEY", "dev-key-12345")
+    BASE_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
+    INTERNAL_API_KEY = st.secrets.get("INTERNAL_API_KEY", "dev-key-170800")
 
     # Ensure all requests include the X-Internal-Key header
     headers = {"X-Internal-Key": INTERNAL_API_KEY}
