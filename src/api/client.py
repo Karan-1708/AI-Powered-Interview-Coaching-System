@@ -2,18 +2,16 @@ import os
 import requests
 import json
 import logging
-import streamlit as st
 from src.utils.diagnostics import get_logger, safe_execute
 
 logger = get_logger()
 
 class APIClient:
-    # Check for a 'BACKEND_URL' in Streamlit Secrets first, otherwise use local
-    BASE_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
-    INTERNAL_API_KEY = st.secrets.get("INTERNAL_API_KEY", "dev-key-170800")
-
-    # Ensure all requests include the X-Internal-Key header
-    headers = {"X-Internal-Key": INTERNAL_API_KEY}
+    """The bridge between the Streamlit Frontend and the FastAPI Backend."""
+    
+    BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+    # Pull internal key for authentication with the backend
+    INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "dev-key-12345")
 
     @staticmethod
     def _get_headers():
