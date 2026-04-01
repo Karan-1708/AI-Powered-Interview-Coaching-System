@@ -28,9 +28,21 @@ import json
 import logging
 import ast
 import time
+import traceback
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import sys
+try:
+    import PIL
+    print(f"DEBUG: PIL file: {PIL.__file__}")
+    from PIL import Image
+    print("DEBUG: Successfully imported PIL.Image")
+except Exception as e:
+    print(f"DEBUG: PIL import failed: {e}")
+    print(f"DEBUG: sys.path: {sys.path}")
+    if 'PIL' in sys.modules:
+        print(f"DEBUG: PIL in sys.modules: {sys.modules['PIL']}")
 
 # --- 2. BACKEND & API ---
 from src.api.client import APIClient
@@ -111,14 +123,16 @@ def speak_text(text):
     threading.Thread(target=run_tts, daemon=True).start()
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Interview Coach", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="AI Interview Coach", page_icon="assets/Data-Drifters.png", layout="wide")
 
 def main():
     try:
-        st.title("🎙️ AI Interview Coach")
-        
         # --- SIDEBAR: ALWAYS-ON MONITOR ---
-        st.sidebar.header("🖥️ Live System Telemetry")
+        with st.sidebar:
+            st.image("assets/Data-Drifters.png", width="stretch")
+            st.header("🖥️ Live System Telemetry")
+        
+        st.title("🎙️ AI Interview Coach")
         
         compute_target = st.sidebar.radio("Compute Allocation", ["NVIDIA GPU", "CPU & RAM Core"], horizontal=True)
         
@@ -142,7 +156,7 @@ def main():
             with st.sidebar.expander("⬇️ Download New Local Model"):
                 new_model_name = st.text_input("Ollama Model Tag (e.g., gemma2:9b)")
                 
-                if st.button("Pull Model", use_container_width=True):
+                if st.button("Pull Model", width="stretch"):
                     progress_bar = st.progress(0, text="Initializing download...")
                     try:
                         # 2. Start the stream
@@ -188,7 +202,7 @@ def main():
         if 'connection_status' not in st.session_state:
             st.session_state['connection_status'] = {"success": False, "message": "⚪ Not tested yet."}
             
-        if st.sidebar.button("Test Connection", use_container_width=True, type="primary"):
+        if st.sidebar.button("Test Connection", width="stretch", type="primary"):
             with st.spinner("Pinging AI Engine..."):
                 success, msg = APIClient.test_connection(st.session_state['engine_config'])
                 st.session_state['connection_status'] = {"success": success, "message": msg}
@@ -207,7 +221,7 @@ def main():
         # --- SIDEBAR: CLEANUP ---
         with st.sidebar.expander("🗑️ Danger Zone"):
             st.warning("This will permanently delete all session history and audio recordings.")
-            if st.button("Delete All Data", use_container_width=True, type="primary"):
+            if st.button("Delete All Data", width="stretch", type="primary"):
                 files_deleted = FileManager.cleanup_all_data()
                 HistoryManager.clear_history()
                 st.success(f"Successfully cleared {files_deleted} files and history.")
@@ -363,7 +377,7 @@ def main():
                 
                 with col_submit:
                     # Submit button only activates if a recording exists
-                    if audio_path and st.button("🗣️ Submit Answer", type="primary", use_container_width=True):
+                    if audio_path and st.button("🗣️ Submit Answer", type="primary", width="stretch"):
                         with st.spinner("Transcribing and processing..."):
                             # We pass 'NVIDIA GPU' or 'CPU' directly from your sidebar config
                             compute_type = st.session_state['engine_config']['compute']
@@ -403,7 +417,7 @@ def main():
 
                 with col_end:
                     if len(st.session_state['chat_history']) > 1:
-                        if st.button("🛑 End Interview & Analyze", use_container_width=True):
+                        if st.button("🛑 End Interview & Analyze", width="stretch"):
                             # Process the final recording if one exists before ending
                             if audio_path:
                                 with st.spinner("Processing final answer..."):
@@ -619,18 +633,18 @@ def main():
                         hovermode="x unified",
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 else:
                     # Simple single chart for first session
                     st.caption("Trend charts will expand as you complete more sessions.")
                     fig_simple = px.scatter(df, x='timestamp', y='wpm', title="Initial Progress Point")
-                    st.plotly_chart(fig_simple, use_container_width=True)
+                    st.plotly_chart(fig_simple, width="stretch")
 
                 st.divider()
 
                 # --- 4. RAW LOGS ---
                 with st.expander("📝 View Detailed Session Logs"):
-                    st.dataframe(df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
+                    st.dataframe(df.sort_values(by='timestamp', ascending=False), width="stretch", hide_index=True)
 
     except Exception as e:
         st.error("🚨 A critical application error occurred.")
