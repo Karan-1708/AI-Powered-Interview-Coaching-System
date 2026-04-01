@@ -17,8 +17,8 @@ pydantic>=2.5.3
 # Note: For local Windows installs without CUDA, you may need: 
 # pip install torch torchaudio
 --extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.1.2+cu121
-torchaudio==2.1.2+cu121
+torch>=2.1.2
+torchaudio>=2.1.2
 faster-whisper>=1.2.1
 librosa>=0.11.0
 soundfile>=0.13.1

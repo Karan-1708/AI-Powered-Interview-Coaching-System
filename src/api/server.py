@@ -3,6 +3,7 @@ import shutil
 import requests
 import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.responses import StreamingResponse
@@ -288,6 +289,14 @@ def pull_model(request: dict):
             yield json.dumps({"error": str(e)}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allows Streamlit Cloud to talk to your local machine
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 if __name__ == "__main__":
     import uvicorn
