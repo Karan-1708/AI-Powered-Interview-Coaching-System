@@ -23,12 +23,12 @@ class AudioProcessor:
         self.hw = HardwareInfo()
 
     @safe_execute(default_val=None, log_msg="Whisper Load Error")
-    def get_model(self, compute_mode="CPU & RAM Core"):
+    def get_model(self, tier="CPU & RAM Core"):
         """
         Retrieves a cached model or loads a new one based on the selected compute mode.
         """
         # Determine device and model size based on user selection
-        if compute_mode == "NVIDIA GPU" and self.hw.has_nvidia:
+        if tier == "NVIDIA GPU" and self.hw.has_nvidia:
             device = "cuda"
             target_model_size = "medium.en"  # High accuracy for GPU
             compute_type = "float16"
@@ -57,7 +57,7 @@ class AudioProcessor:
         return model
 
     @safe_execute(default_val=(None, None, 0, "Processing Error"), log_msg="Interview Processing Error")
-    def process_interview(self, audio_path, difficulty="Standard Interview", compute_mode="CPU & RAM Core"):
+    def process_interview(self, audio_path, difficulty="Standard Interview", tier="CPU & RAM Core"):
         if not os.path.exists(audio_path):
             return None, None, 0, "Error: Audio file not found."
 
@@ -68,7 +68,7 @@ class AudioProcessor:
         start_time = time.time()
         
         # Load model based on user's sidebar selection
-        model = self.get_model(compute_mode)
+        model = self.get_model(tier)
         if not model:
             return None, None, 0, "Error: Could not load Whisper model."
             
@@ -107,12 +107,21 @@ class AudioProcessor:
     def check_for_silence(self, audio_path):
         import librosa
         import numpy as np
+        import shutil
         
-        y, sr = librosa.load(audio_path, sr=16000)
-        trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
-        active_duration = len(trimmed_audio) / sr
+        if not shutil.which("ffmpeg"):
+            logger.error("FFmpeg not found in system path. Audio processing will fail.")
+            return True, "Error: FFmpeg is not installed on the server. Please install FFmpeg to process audio."
         
-        if active_duration < 1.0:
-            return True, "Microphone did not pick up enough audio. Please try again."
+        try:
+            y, sr = librosa.load(audio_path, sr=16000)
+            trimmed_audio, _ = librosa.effects.trim(y, top_db=30)
+            active_duration = len(trimmed_audio) / sr
             
-        return False, None
+            if active_duration < 1.0:
+                return True, "Microphone did not pick up enough audio. Please try again."
+                
+            return False, None
+        except Exception as e:
+            logger.error(f"Librosa load error: {e}")
+            return True, f"Error reading audio file: {str(e)}"
