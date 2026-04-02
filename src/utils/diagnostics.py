@@ -84,7 +84,8 @@ logger.setLevel(logging.INFO)
 # Prevent adding multiple handlers if the module is reloaded by Streamlit/FastAPI
 if not logger.handlers:
     # 1. File Handler (Saves to logs/app_debug.log)
-    file_handler = logging.FileHandler(os.path.join(log_dir, "app_debug.log"), mode="w")
+    # Force UTF-8 encoding to prevent UnicodeEncodeError on Windows
+    file_handler = logging.FileHandler(os.path.join(log_dir, "app_debug.log"), mode="w", encoding="utf-8")
     file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)

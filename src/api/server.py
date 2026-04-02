@@ -2,11 +2,13 @@ import os
 import shutil
 import requests
 import json
+import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+import edge_tts
 from src.utils.diagnostics import get_logger, log_system_info, safe_execute
 
 # --- 1. ENVIRONMENT & SECURITY SETUP ---
@@ -38,13 +40,13 @@ res_monitor = ResourceMonitor()
 app = FastAPI(
     title="Data Drifters: Interview Coach API",
     description="Backend API for AI-powered interview coaching.",
-    version="1.1.0"
+    version="1.2.0"
 )
 
-# --- 3. CORS CONFIGURATION (Required for Streamlit Cloud) ---
+# --- 3. CORS CONFIGURATION ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows Streamlit Cloud to connect
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,6 +65,17 @@ class LLMRequest(BaseModel):
     model: str
     compute_type: str
     api_key: Optional[str] = None
+    resume_context: Optional[str] = ""
+    job_context: Optional[str] = ""
+
+class QuestionRequest(BaseModel):
+    seniority: str
+    job_title: str
+    industry: str
+    selected_round: str
+    engine_config: dict
+    resume_context: Optional[str] = ""
+    job_context: Optional[str] = ""
 
 class ConnectionRequest(BaseModel):
     provider: str
@@ -70,16 +83,18 @@ class ConnectionRequest(BaseModel):
     compute_type: str
     api_key: Optional[str] = None
 
+class SpeechRequest(BaseModel):
+    text: str
+    voice: Optional[str] = "en-US-GuyNeural"
+
 # --- ENDPOINTS ---
 
 @app.get("/", tags=["Health"])
 def root():
-    """Simple health check."""
     return {"status": "online", "message": "Data Drifters API is running."}
 
 @app.get("/hardware", dependencies=[Depends(verify_internal_key)], tags=["Telemetry"])
 def get_hardware():
-    """Returns live hardware stats. 401 if key invalid, 500 if collection fails."""
     try:
         rec_tier, rec_reason = hw_info.get_recommendation()
         stats = res_monitor.get_system_usage()
@@ -99,7 +114,6 @@ def process_audio(
     difficulty: str = Form("Standard Interview"), 
     tier: str = Form("Balanced")
 ):
-    """Transcribes audio and performs scoring. Uses threadpool to prevent blocking."""
     FileManager.initialize_directories()
     temp_path = os.path.join(FileManager.TEMP_DIR, f"upload_{file.filename}")
     try:
@@ -120,7 +134,6 @@ def process_audio(
 
 @app.post("/test-connection", dependencies=[Depends(verify_internal_key)], tags=["LLM"])
 def test_connection(request: ConnectionRequest):
-    """Verifies connection to LLM provider. 401 if key invalid."""
     try:
         llm = LLMClient(provider=request.provider, model_name=request.model, 
                         compute_type=request.compute_type, api_key=request.api_key)
@@ -131,20 +144,60 @@ def test_connection(request: ConnectionRequest):
 
 @app.post("/generate-response", dependencies=[Depends(verify_internal_key)], tags=["LLM"])
 def generate_response(request: LLMRequest):
-    """Generates LLM response. Uses threadpool to prevent UI freezing."""
+    """Generates LLM response with optional resume/job context."""
     try:
         llm = LLMClient(provider=request.provider, model_name=request.model, 
                         compute_type=request.compute_type, api_key=request.api_key)
+        
+        # Build contextual instruction
+        context_instr = ""
+        if request.resume_context:
+            context_instr += f"\n[CONTEXT: RESUME]\n{request.resume_context}\n"
+        if request.job_context:
+            context_instr += f"\n[CONTEXT: JOB DESCRIPTION]\n{request.job_context}\n"
+            
+        full_system_prompt = request.system_prompt + context_instr
+        
         history = [msg.dict() for msg in request.chat_history] if request.chat_history else []
-        response_text = llm.generate_response(system_prompt=request.system_prompt, 
+        response_text = llm.generate_response(system_prompt=full_system_prompt, 
                                             user_message=request.user_message, chat_history=history)
         return {"response": response_text, "model_used": llm.model_name}
     except Exception as e:
+        logger.error(f"Generate Response Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-questions", dependencies=[Depends(verify_internal_key)], tags=["LLM"])
+def generate_questions(request: QuestionRequest):
+    """Specifically generates interview questions using full role and context metadata."""
+    try:
+        config = request.engine_config
+        llm = LLMClient(provider=config['provider'], model_name=config['model'], 
+                        compute_type=config['compute'], api_key=config.get('api_key'))
+        
+        context_bonus = ""
+        if request.resume_context:
+            context_bonus += f"\nCandidate Resume Context: {request.resume_context[:2000]}"
+        if request.job_context:
+            context_bonus += f"\nJob Description Context: {request.job_context[:2000]}"
+
+        q_prompt = (
+            f"Generate 3 highly specific interview questions for a {request.seniority} {request.job_title} "
+            f"during the '{request.selected_round}' round in the {request.industry} industry. {context_bonus} "
+            f"Output ONLY a Python-style list of strings."
+        )
+        
+        response = llm.generate_response(
+            system_prompt="You are an expert interviewer. You output ONLY a Python-style list of strings.", 
+            user_message=q_prompt, 
+            chat_history=[]
+        )
+        return {"response": response}
+    except Exception as e:
+        logger.error(f"Generate Questions Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/models", dependencies=[Depends(verify_internal_key)], tags=["Local Models"])
 def list_models():
-    """Fetches local Ollama models."""
     ollama_hosts = []
     env_host = os.getenv("OLLAMA_HOST")
     if env_host: ollama_hosts.append(env_host)
@@ -159,7 +212,6 @@ def list_models():
 
 @app.post("/pull-model", dependencies=[Depends(verify_internal_key)], tags=["Local Models"])
 def pull_model(request: dict):
-    """Streams model download from Ollama."""
     model_name = request.get("model")
     ollama_host = "http://host.docker.internal:11434"
     for host in [os.getenv("OLLAMA_HOST"), "http://host.docker.internal:11434", "http://127.0.0.1:11434"]:
@@ -177,6 +229,32 @@ def pull_model(request: dict):
         except Exception as e:
             yield json.dumps({"error": str(e)}) + "\n"
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+@app.post("/generate-speech", dependencies=[Depends(verify_internal_key)], tags=["TTS"])
+async def generate_speech(request: SpeechRequest):
+    """
+    Generates an MP3 file from text using edge-tts.
+    """
+    logger.info(f"Generating speech for text: {request.text[:50]}...")
+    FileManager.initialize_directories()
+    temp_filename = f"tts_{int(time.time())}.mp3"
+    temp_path = os.path.join(FileManager.TEMP_DIR, temp_filename)
+    
+    try:
+        communicate = edge_tts.Communicate(request.text, request.voice)
+        await communicate.save(temp_path)
+        
+        if not os.path.exists(temp_path):
+            raise HTTPException(status_code=500, detail="Failed to generate audio file.")
+            
+        return FileResponse(
+            temp_path, 
+            media_type="audio/mpeg", 
+            filename=temp_filename
+        )
+    except Exception as e:
+        logger.error(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

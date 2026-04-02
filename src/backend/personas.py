@@ -55,8 +55,8 @@ class Personas:
             return Personas.STRESS_INTERVIEWER
 
     @staticmethod
-    def get_interview_sys_prompt(persona_name, round_name, seniority, job_title, industry):
-        return (
+    def get_interview_sys_prompt(persona_name, round_name, seniority, job_title, industry, resume_text=None, job_desc_text=None):
+        prompt = (
             f"You are acting as a {persona_name} conducting a {round_name} interview "
             f"for a {seniority} {job_title} role in the {industry} industry. "
             f"Your goal is to assess the candidate's skills based on the persona. "
@@ -64,6 +64,14 @@ class Personas:
             f"Base your follow-ups strictly on the candidate's previous answer. "
             f"Do not break character. Do not provide feedback yet."
         )
+
+        if resume_text:
+            prompt += "\nCross-reference the candidate's answers against their provided resume. Look for inconsistencies or areas where they might be overstating their experience."
+            
+        if job_desc_text:
+            prompt += "\nFocus the interview heavily on the specific requirements and key responsibilities listed in the job posting."
+            
+        return prompt
 
     @staticmethod
     def get_final_feedback_prompt(seniority, job_title, industry, full_transcript):

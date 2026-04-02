@@ -32,18 +32,18 @@ class APIClient:
 
     @staticmethod
     @safe_execute(default_val=(None, None, None, "API Error"), log_msg="Audio Upload Error")
-    def process_audio(file_path, difficulty, compute_mode):
+    def process_audio(file_path, difficulty, tier):
         """Sends the audio file to the backend API for transcription and analysis."""
         url = f"{APIClient.BASE_URL}/process-audio"
         with open(file_path, "rb") as f:
             files = {"file": (os.path.basename(file_path), f, "audio/wav")}
-            data = {"difficulty": difficulty, "compute_mode": compute_mode}
+            data = {"difficulty": difficulty, "tier": tier}
             response = requests.post(
                 url, 
                 files=files, 
                 data=data, 
                 headers=APIClient._get_headers(), 
-                timeout=120 # Increased for simultaneous users
+                timeout=120
             )
         
         if response.status_code == 200:
@@ -53,8 +53,8 @@ class APIClient:
 
     @staticmethod
     @safe_execute(default_val="Generation Error", log_msg="LLM Generation Error")
-    def generate_response(system_prompt, user_message, chat_history, engine_config):
-        """Generates a text response using the selected LLM provider."""
+    def generate_response(system_prompt, user_message, chat_history, engine_config, resume_context="", job_context=""):
+        """Generates a text response using the selected LLM provider with full context."""
         url = f"{APIClient.BASE_URL}/generate-response"
         payload = {
             "system_prompt": system_prompt,
@@ -63,13 +63,39 @@ class APIClient:
             "provider": engine_config['provider'],
             "model": engine_config['model'],
             "compute_type": engine_config['compute'],
-            "api_key": engine_config['api_key']
+            "api_key": engine_config.get('api_key'),
+            "resume_context": resume_context,
+            "job_context": job_context
         }
         response = requests.post(
             url, 
             json=payload, 
             headers=APIClient._get_headers(), 
-            timeout=60 # Increased for external APIs
+            timeout=60
+        )
+        if response.status_code == 200:
+            return response.json()['response']
+        return f"API Error: {response.text}"
+
+    @staticmethod
+    @safe_execute(default_val="Generation Error", log_msg="Question Generation Error")
+    def generate_questions(seniority, job_title, industry, selected_round, engine_config, resume_context="", job_context=""):
+        """Calls the specialized question generation endpoint with role and context metadata."""
+        url = f"{APIClient.BASE_URL}/generate-questions"
+        payload = {
+            "seniority": seniority,
+            "job_title": job_title,
+            "industry": industry,
+            "selected_round": selected_round,
+            "engine_config": engine_config,
+            "resume_context": resume_context,
+            "job_context": job_context
+        }
+        response = requests.post(
+            url,
+            json=payload,
+            headers=APIClient._get_headers(),
+            timeout=60
         )
         if response.status_code == 200:
             return response.json()['response']
@@ -84,13 +110,13 @@ class APIClient:
             "provider": engine_config['provider'],
             "model": engine_config['model'],
             "compute_type": engine_config['compute'],
-            "api_key": engine_config['api_key']
+            "api_key": engine_config.get('api_key')
         }
         res = requests.post(
             url, 
             json=payload, 
             headers=APIClient._get_headers(), 
-            timeout=30 # Increased for cold starts
+            timeout=30
         )
         if res.status_code == 200:
             data = res.json()
@@ -110,10 +136,7 @@ class APIClient:
 
     @staticmethod
     def pull_model_stream(model_name):
-        """
-        Streams progress of downloading a new model.
-        Timeout set to None because model pulls can have long idle periods.
-        """
+        """Streams progress of downloading a new model."""
         url = f"{APIClient.BASE_URL}/pull-model"
         return requests.post(
             url, 
@@ -122,3 +145,24 @@ class APIClient:
             stream=True, 
             timeout=None 
         )
+
+    @staticmethod
+    def generate_speech(text, voice="en-US-GuyNeural"):
+        """Calls the TTS endpoint and returns the audio bytes."""
+        url = f"{APIClient.BASE_URL}/generate-speech"
+        payload = {"text": text, "voice": voice}
+        try:
+            response = requests.post(
+                url, 
+                json=payload, 
+                headers=APIClient._get_headers(), 
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.content
+            
+            logger.error(f"TTS API Error {response.status_code}: {response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"TTS API Exception: {e}")
+            return None
