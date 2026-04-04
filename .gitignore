@@ -28,5 +28,4 @@ models/
 *.gguf
 
 #personal files
-report_context.md
 commands.txt
