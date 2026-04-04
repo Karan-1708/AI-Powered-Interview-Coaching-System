@@ -268,7 +268,15 @@ def main():
                     st.session_state['sys_p'] = Personas.get_interview_sys_prompt(st.session_state['selected_persona_label'], st.session_state['selected_round'], st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], st.session_state['resume_text'], st.session_state['job_desc_text'])
                     st.session_state['chat_history'] = []
                     with st.spinner("🎙️ Coach is entering the room..."):
-                        first_q = APIClient.generate_response(st.session_state['sys_p'], "Greet the candidate. Check resume for name, or ask for it.", [], st.session_state['engine_config'], resume_context=st.session_state.get('resume_text', ""), job_context=st.session_state.get('job_desc_text', ""))
+                        # Generate a dynamic opening based on the system prompt
+                        first_q = APIClient.generate_response(
+                            st.session_state['sys_p'], 
+                            "Start the interview. LOOK at my Resume Context provided and greet me by my name if it is there. If you cannot find my name, introduce yourself and ask for my name.", 
+                            [], 
+                            st.session_state['engine_config'],
+                            resume_context=st.session_state.get('resume_text', ""),
+                            job_context=st.session_state.get('job_desc_text', "")
+                        )
                         first_q = clean_llm_text(first_q); trigger_voice(first_q)
                         st.session_state['chat_history'].append({"role": "assistant", "content": first_q}); st.rerun()
 

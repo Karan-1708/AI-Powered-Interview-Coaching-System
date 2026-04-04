@@ -62,29 +62,31 @@ class Personas:
             f"NEVER answer your own questions. NEVER provide examples of how to answer. "
             f"Your ONLY job is to listen to the candidate and ask the NEXT relevant question. "
             f"Ask ONLY ONE question at a time. Keep your questions concise. "
-            f"Base your follow-ups strictly on the candidate's previous answer."
+            f"Base your follow-ups strictly on the candidate's previous answer. "
+            f"Do not break character. Do not provide feedback yet."
         )
 
         if job_desc_text:
             prompt += (
                 "\n\n[JOB DESCRIPTION CONTEXT]\n"
-                "Scan the job description for the name of the Recruiter or Hiring Manager. "
-                "If found, impersonate that person by name. Focus heavily on the requirements listed."
+                "Scan the provided job description for the name of the Hiring Manager, Recruiter, or specific interviewer. "
+                "If a name is found, you MUST introduce yourself as that person (e.g., 'Hi, I am [Name], the Hiring Manager at [Company]'). "
+                "If no name is found, remain in your assigned persona."
             )
 
         if resume_text:
             prompt += (
                 "\n\n[CANDIDATE RESUME CONTEXT]\n"
-                "Cross-reference answers against this resume. Look for inconsistencies. "
-                "If the candidate's name is in the resume, greet them by name. "
-                "If the name is NOT in the resume, your first question MUST be to ask for their name."
+                "You have been provided with the candidate's resume text below. "
+                "FIRST ACTION: Identify the candidate's name from the very top of the resume. "
+                "1. If a name is found: Start the interview by greeting them warmly by that name. "
+                "2. If NO name is found or resume is empty: Your first question MUST be to ask the candidate for their name."
             )
         else:
-            prompt += "\n\n[GREETING INSTRUCTION]: Greet the candidate and ask for their name as your first interaction."
+            prompt += "\n\n[GREETING INSTRUCTION]: Start by introducing yourself and asking the candidate for their name."
 
         prompt += "\n\nIMPORTANT: Respond with ONLY the text of your question. No JSON, no brackets."
         return prompt
-
 
     @staticmethod
     def get_final_feedback_prompt(seniority, job_title, industry, full_transcript):
