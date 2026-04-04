@@ -1,16 +1,15 @@
 import os
 import sys
 import streamlit as st
-import platform
-import shutil
 import json
-import logging
 import ast
 import time
 import traceback
-import pandas as pd
-import plotly.express as px
 import base64
+from dotenv import load_dotenv
+
+# Load .env file if it exists (for local testing)
+load_dotenv()
 import re
 
 # --- PATH INJECTION ---
@@ -19,95 +18,62 @@ if root_dir not in sys.path: sys.path.insert(0, root_dir)
 src_dir = os.path.join(root_dir, "src")
 if src_dir not in sys.path: sys.path.insert(0, src_dir)
 
-# --- 1. ENVIRONMENT & LOGGING ---
+# --- INTERNAL IMPORTS ---
 from src.utils.diagnostics import get_logger, log_system_info
+from src.api.client import APIClient
+from src.ui.recorder import record_audio
+from src.utils.file_manager import FileManager
+from src.utils.history import HistoryManager
+from src.backend.hardware import HardwareInfo
+from src.backend.personas import Personas
+from src.utils.text_processor import clean_llm_text, parse_file
+from src.ui.dashboard import render_final_analysis, render_history_dashboard
 
+# --- INITIALIZATION ---
 if 'sys_logged' not in st.session_state:
     log_system_info()
     st.session_state['sys_logged'] = True
 
 logger = get_logger()
+FileManager.initialize_directories()
 
-# --- 2. BACKEND & API ---
-from src.api.client import APIClient
-from src.ui.recorder import record_audio
-from src.utils.file_manager import FileManager
-from src.utils.pdf_generator import PDFGenerator
-from src.utils.history import HistoryManager
-from src.backend.personas import Personas
-
-# --- CACHED API WRAPPERS ---
-@st.cache_data(ttl=60)
+# --- CACHED WRAPPERS ---
+@st.cache_data(ttl=300)
 def get_cached_models():
     return APIClient.get_local_models()
 
-@st.cache_data(ttl=5) # Prevent flicker by caching probe results for 5s
-def cached_probe(config):
-    return APIClient.test_connection(config)
-
-# Ensure directories are ready
-FileManager.initialize_directories()
-
-# --- LIVE STATUS FRAGMENT (Isolated to reduce grey-out) ---
-@st.fragment(run_every=3) # Slower heartbeat to reduce visual distraction
+# --- UI COMPONENTS ---
+@st.fragment(run_every=5)
 def unified_status_monitor():
-    """Renders all live telemetry and connection indicators inside a container."""
-    # We use a container to visually group these and minimize sidebar layout shifts
-    with st.container():
-        hw_status = APIClient.get_hardware_status()
-        
-        # 1. Backend Status
-        st.subheader("🔌 Connection Status")
-        if hw_status:
-            st.success("🟢 Backend: Online")
-        else:
-            st.error("🔴 Backend: Offline")
-            st.warning("⚠️ Telemetry Offline")
-            return
-
-        # 2. AI Engine Status
+    """Renders live telemetry and connection indicators."""
+    hw_status = APIClient.get_hardware_status()
+    st.subheader("🔌 Connection Status")
+    if hw_status:
+        st.success("🟢 Backend: Online")
         if 'engine_config' in st.session_state:
-            # Use cached probe to avoid network delay on every single tick
-            success, msg = cached_probe(st.session_state['engine_config'])
+            success, msg = APIClient.test_connection(st.session_state['engine_config'])
             if success: st.success("🟢 AI Engine: Ready")
             else: st.error(f"🔴 AI Engine: {msg.split('.')[0]}")
-
-        # 3. Hardware Telemetry
+        
         st.divider()
         st.subheader("🖥️ Resource Usage")
         stats = hw_status.get("stats", {})
-        c_val, r_pct = stats.get('cpu_percent', 0), stats.get('ram_percent', 0)
+        c_v, r_p = stats.get('cpu_percent', 0), stats.get('ram_percent', 0)
         r_u, r_t = stats.get('ram_used_gb', 0), stats.get('ram_total_gb', 0)
-        
-        st.progress(min(max(float(c_val) / 100.0, 0.0), 1.0), text=f"API CPU: {c_val}%")
-        st.progress(min(max(float(r_pct) / 100.0, 0.0), 1.0), text=f"API RAM: {r_u}/{r_t} GB")
-        
+        st.progress(min(max(float(c_v) / 100.0, 0.0), 1.0), text=f"API CPU: {c_v}%")
+        st.progress(min(max(float(r_p) / 100.0, 0.0), 1.0), text=f"API RAM: {r_u}/{r_t} GB")
         if stats.get("gpu_detected"):
-            v_pct = stats.get('vram_percent', 0)
-            v_u, v_t = stats.get('vram_used_gb', 0), stats.get('vram_total_gb', 0)
-            st.progress(min(max(float(v_pct) / 100.0, 0.0), 1.0), text=f"API VRAM: {v_u}/{v_t} GB")
-
-# --- HELPERS ---
-def clean_llm_text(text):
-    raw = str(text).strip()
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list) and len(parsed) > 0: raw = str(parsed[0])
-    except: raw = raw.strip('[]"\' ')
-    raw = re.sub(r'^(Question\s*\d+:|\d+\.)\s*', '', raw, flags=re.IGNORECASE)
-    return raw.strip()
-
-def parse_file(uploaded_file):
-    if not uploaded_file: return None
-    try:
-        if uploaded_file.type == "text/plain": return str(uploaded_file.read(), "utf-8")
-        elif uploaded_file.type == "application/pdf":
-            import pypdf
-            return " ".join([p.extract_text() for p in pypdf.PdfReader(uploaded_file).pages])
-    except: return "Error parsing file."
-    return None
+            v_p = stats.get('vram_percent') or 0
+            v_u = stats.get('vram_used_gb') or 0
+            v_t = stats.get('vram_total_gb') or 0
+            st.progress(min(max(float(v_p) / 100.0, 0.0), 1.0), text=f"API VRAM: {v_u}/{v_t} GB")
+    else:
+        st.error("🔴 Backend: Offline")
+    
+    if st.button("🔄 Refresh Status", width='stretch'): st.rerun()
 
 def trigger_voice(text):
+    """Fetches audio and sets play state."""
     if not text: return
     clean_text = clean_llm_text(text)
     voice = st.session_state.get('selected_voice', "en-US-GuyNeural")
@@ -118,107 +84,120 @@ def trigger_voice(text):
         return True
     return False
 
-# --- PAGE CONFIG ---
+@st.fragment
+def isolated_recorder_flow(info):
+    """Isolates recorder widget for UI stability."""
+    st.divider()
+    if 'rec_nonce' not in st.session_state: st.session_state['rec_nonce'] = 0
+    audio_path = record_audio(key=f"recorder_{st.session_state['rec_nonce']}")
+    c_sub, c_end = st.columns(2)
+    
+    # Get current compute from config
+    compute_type = st.session_state.get('engine_config', {}).get('compute', 'CPU & RAM Core')
+    
+    if audio_path and c_sub.button("🗣️ Submit Answer", type="primary", width='stretch'):
+        with st.spinner("Processing..."):
+            t, m, d, e = APIClient.process_audio(audio_path, info['recommended_mode'], compute_type)
+            if not e:
+                st.session_state['aggregated_metrics'].append({"transcript": t, "metrics": m, "duration": d})
+                st.session_state['chat_history'].append({"role": "user", "content": t})
+                with st.spinner("Thinking..."):
+                    nxt = APIClient.generate_response(st.session_state['sys_p'], t, st.session_state['chat_history'][:-1], st.session_state['engine_config'], resume_context=st.session_state.get('resume_text', ""), job_context=st.session_state.get('job_desc_text', ""))
+                    trigger_voice(nxt)
+                    st.session_state['chat_history'].append({"role": "assistant", "content": clean_llm_text(nxt)})
+                    st.session_state['rec_nonce'] += 1
+                    st.rerun()
+
+    if c_end.button("🛑 End Interview & Analyze", width='stretch'):
+        if audio_path:
+            with st.spinner("Finalizing..."):
+                t, m, d, e = APIClient.process_audio(audio_path, info['recommended_mode'], compute_type)
+                if not e:
+                    st.session_state['aggregated_metrics'].append({"transcript": t, "metrics": m, "duration": d})
+                    st.session_state['chat_history'].append({"role": "user", "content": t})
+        st.session_state['interview_complete'] = True
+        st.rerun()
+
+# --- MAIN APP ---
 st.set_page_config(page_title="AI Interview Coach", page_icon="assets/Data-Drifters.png", layout="wide")
 
 def main():
     try:
-        # --- SIDEBAR: LIVE MONITORING ---
+        # --- SIDEBAR ---
         with st.sidebar:
             st.image("assets/Data-Drifters.png", width="stretch")
-            
-            # --- Dedicated Fragment Container ---
-            # This helps isolate the visual refresh to just this section
-            with st.container():
-                unified_status_monitor()
+            if st.session_state.get('setup_step') != 3: unified_status_monitor()
+            else: st.info("📊 Telemetry paused for stability.")
             
             st.divider()
             st.header("⚙️ Configuration")
+            
+            # --- COMPUTE ALLOCATION WITH HARDWARE HELPER ---
+            hw = HardwareInfo()
+            rec_mode, rec_text = hw.get_recommendation()
+            c_label = "Compute Allocation"
+            compute_options = ["NVIDIA GPU", "CPU & RAM Core"]
+            if hw.is_apple_silicon: compute_options = ["Apple Silicon", "CPU & RAM Core"]
+            compute_target = st.radio(c_label, compute_options, horizontal=True)
+            with st.expander("💡 Hardware Helper"):
+                st.info(rec_text)
+                st.caption(f"**Detected:** {hw.cpu_info}")
+            
             v_opt = st.radio("Coach Voice", ["Male", "Female"], horizontal=True)
-            voice_map = {"Male": "en-US-GuyNeural", "Female": "en-US-AvaNeural"}
-            st.session_state['selected_voice'] = voice_map[v_opt]
+            st.session_state['selected_voice'] = "en-US-GuyNeural" if v_opt == "Male" else "en-US-AvaNeural"
 
             provider = st.selectbox("Inference Provider", ["Local (Ollama)", "External API"])
             if provider == "Local (Ollama)":
                 models = get_cached_models()
                 selected_model = st.selectbox("Local Model", models)
-                with st.expander("⬇️ Download New Model"):
+                with st.expander("⬇️ Download Model"):
                     tag = st.selectbox("Tag", ["llama3.1:8b", "gemma2:9b", "mistral:7b", "-- Other --"])
                     if tag == "-- Other --": tag = st.text_input("Custom Tag")
-                    if st.button("Pull Model", use_container_width=True):
-                        p = st.progress(0, "Starting...")
-                        res = APIClient.pull_model_stream(tag)
+                    if st.button("Pull"):
+                        p = st.progress(0); res = APIClient.pull_model_stream(tag)
                         for line in res.iter_lines():
                             if line:
                                 d = json.loads(line.decode('utf-8'))
-                                if "completed" in d and "total" in d and d["total"] > 0:
-                                    p.progress(d["completed"]/d["total"], f"Downloading {tag}...")
+                                if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"])
                         st.success("Ready!"); st.cache_data.clear(); st.rerun()
                 api_key, api_target = None, "Ollama"
             else:
                 api_target = st.selectbox("API Target", ["OpenAI", "Anthropic", "Google Gemini"])
-                
-                # Dynamic Key Links
-                key_links = {
-                    "OpenAI": "https://platform.openai.com/api-keys",
-                    "Anthropic": "https://platform.claude.com/settings/keys",
-                    "Google Gemini": "https://aistudio.google.com/app/api-keys"
+                m_map = {
+                    "OpenAI": ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"],
+                    "Anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"],
+                    "Google Gemini": ["gemini-3.1-flash", "gemini-3-flash-lite", "gemini-2.5-flash-lite"]
                 }
-                
-                if api_target == "OpenAI": m_list = ["gpt-5.4-nano", "o4-mini", "-- Other --"]
-                elif api_target == "Anthropic": m_list = ["claude-haiku-4-5", "claude-sonnet-4-6", "-- Other --"]
-                else: m_list = ["gemini-2.0-flash", "gemini-1.5-flash", "-- Other --"]
-                
+                m_list = m_map.get(api_target, ["-- Other --"]) + ["-- Other --"]
                 selected_model = st.selectbox("Model", m_list)
-                if selected_model == "-- Other --": selected_model = st.text_input("Custom String")
-                
-                st.caption(f"ℹ️ [Don't have a key? Get one here]({key_links[api_target]})")
-                
-                # --- REMEMBER MY KEYS FEATURE ---
-                if 'saved_keys' not in st.session_state:
-                    st.session_state['saved_keys'] = {}
-                
-                # Get existing key for this provider if it exists
-                default_key = st.session_state['saved_keys'].get(api_target, "")
-                
-                api_key = st.text_input("Secret API Key", value=default_key, type="password")
-                
-                # Save the key immediately to session state when it changes
-                if api_key:
-                    st.session_state['saved_keys'][api_target] = api_key
+                if selected_model == "-- Other --": selected_model = st.text_input("Custom Model")
+                if 'saved_keys' not in st.session_state: st.session_state['saved_keys'] = {}
+                st.caption(f"ℹ️ [Get Key here](https://aistudio.google.com/app/api-keys)")
+                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(api_target, ""), type="password")
+                if api_key: st.session_state['saved_keys'][api_target] = api_key
 
-            st.session_state['engine_config'] = {
-                "provider": provider if provider == "Local (Ollama)" else api_target,
-                "model": selected_model, "compute": "NVIDIA GPU", "api_key": api_key
-            }
+            st.session_state['engine_config'] = {"provider": provider if provider == "Local (Ollama)" else api_target, "model": selected_model, "compute": compute_target, "api_key": api_key}
 
             st.divider()
-            if st.button("🔄 Start New Interview", use_container_width=True):
-                # Preserve Configuration and Saved Keys
+            if st.button("🔄 Start New Interview", width='stretch'):
                 keep = ['engine_config', 'sys_logged', 'selected_voice', 'saved_keys']
                 for k in list(st.session_state.keys()):
                     if k not in keep: del st.session_state[k]
                 st.rerun()
 
             with st.expander("🗑️ Danger Zone"):
-                if st.button("Delete All Data", type="primary", use_container_width=True):
-                    FileManager.cleanup_all_data()
-                    HistoryManager.clear_history()
-                    # Fully wipe session state keys
+                if st.button("Delete All Data", type="primary"):
+                    FileManager.cleanup_all_data(); HistoryManager.clear_history()
                     if 'saved_keys' in st.session_state: del st.session_state['saved_keys']
-                    st.success("All data and saved keys cleared!")
-                    time.sleep(1)
                     st.rerun()
 
         st.title("🎙️ AI Interview Coach")
 
+        # --- AUDIO AUTOPLAY ---
         if st.session_state.get('play_now_bytes'):
             b64 = base64.b64encode(st.session_state['play_now_bytes']).decode()
             n = st.session_state.get('audio_nonce', 0)
-            st.components.v1.html(f"""
-                <audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>
-                <script>document.getElementById("a_{n}").play();</script>
-            """, height=0)
+            st.components.v1.html(f'<audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><script>document.getElementById("a_{n}").play();</script>', height=0)
             st.session_state['play_now_bytes'] = None
 
         tab_coach, tab_history = st.tabs(["🎯 Live Coach", "📈 Session History"])
@@ -226,93 +205,89 @@ def main():
         with tab_coach:
             if 'setup_step' not in st.session_state: st.session_state['setup_step'] = 1
             if 'rounds' not in st.session_state: st.session_state['rounds'] = []
+            if 'aggregated_metrics' not in st.session_state: st.session_state['aggregated_metrics'] = []
             
-            with st.expander("🛠️ Interview Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
+            with st.expander("🛠️ Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
                 st.markdown("### 1. Define Target Role")
                 c1, c2, c3 = st.columns(3)
-                ind, role, sen = c1.text_input("Industry"), c2.text_input("Job Title"), c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"])
+                ind = c1.text_input("Industry", placeholder="e.g., Tech")
+                role = c2.text_input("Job Title", placeholder="e.g., Backend Developer")
+                sen = c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"])
                 
                 st.divider()
                 st.markdown("### 2. Contextual Data (Optional)")
                 c_res, c_jd = st.columns(2)
-                res_f, jd_f = c_res.file_uploader("Resume"), c_jd.file_uploader("Job Description")
+                res_f = c_res.file_uploader("Upload Resume", type=["pdf", "txt"])
+                jd_f = c_jd.file_uploader("Upload Job Description", type=["pdf", "txt"])
                 st.session_state['resume_text'] = parse_file(res_f) if res_f else ""
                 st.session_state['job_desc_text'] = parse_file(jd_f) if jd_f else ""
 
                 if st.button("Generate Interview Rounds", disabled=not (ind and role)):
                     with st.spinner("Structuring..."):
-                        p = f"List 4 interview rounds for {sen} {role} in {ind}. Output ONLY a Python list."
-                        resp = APIClient.generate_response("Strict list output.", p, [], st.session_state['engine_config'])
+                        p = (f"List 4 unique interview rounds for a {sen} {role} in the {ind} industry. "
+                             f"Output ONLY a Python list of strings. Do NOT output anything else.")
+                        # CRITICAL: We do NOT pass resume_context here to prevent round contamination
+                        resp = APIClient.generate_response("You are an expert recruiter. Return ONLY a Python list.", p, [], st.session_state['engine_config'])
                         try:
-                            m = re.search(r"\[.*\]", resp, re.DOTALL)
-                            st.session_state['rounds'] = ast.literal_eval(m.group()) if m else [resp]
-                        except: st.session_state['rounds'] = [resp]
+                            import re; m = re.search(r"\[.*\]", resp, re.DOTALL)
+                            rounds = ast.literal_eval(m.group()) if m else [resp]
+                            st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
+                        except: st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
                         st.session_state['setup_step'] = 2; st.rerun()
 
                 if st.session_state['setup_step'] >= 2:
                     st.divider()
-                    sel_r = st.selectbox("Stage:", st.session_state['rounds'])
+                    st.markdown("### 3. Select Stage & Persona")
+                    sel_r = st.selectbox("Target Interview Round:", st.session_state['rounds'])
                     sel_p = st.selectbox("Interviewer Style:", list(Personas.PERSONA_PROMPTS.keys()))
                     if st.button("Generate Questions", type="primary"):
-                        with st.spinner("Writing..."):
-                            st.session_state.update({'selected_persona_label': sel_p, 'selected_round': sel_r})
-                            persona_cfg = Personas.get_interviewer_by_type(sel_r.split(" ")[0], sen)
-                            st.session_state['round_info'] = {"meaning": persona_cfg['meaning'], "persona": persona_cfg['persona']}
-                            q_resp = APIClient.generate_questions(sen, role, ind, sel_r, st.session_state['engine_config'], st.session_state['resume_text'], st.session_state['job_desc_text'])
-                            try:
-                                m = re.search(r"\[.*\]", q_resp, re.DOTALL)
-                                qs = ast.literal_eval(m.group()) if m else [q_resp]
-                                st.session_state['custom_questions'] = [clean_llm_text(q) for q in qs]
-                            except: st.session_state['custom_questions'] = [clean_llm_text(q_resp)]
-                            st.session_state['setup_step'] = 3; st.rerun()
+                        if not sel_r: st.error("Please generate interview rounds in Step 1 first!")
+                        else:
+                            with st.spinner("Writing..."):
+                                st.session_state.update({'selected_persona_label': sel_p, 'selected_round': sel_r, 'seniority': sen, 'job_title': role, 'industry': ind})
+                                persona_cfg = Personas.get_interviewer_by_type(sel_r.split(" ")[0], sen)
+                                st.session_state['round_info'] = {"meaning": persona_cfg['meaning'], "persona": persona_cfg['persona'], "recommended_mode": "Balanced"}
+                                q_resp = APIClient.generate_questions(sen, role, ind, sel_r, st.session_state['engine_config'], st.session_state['resume_text'], st.session_state['job_desc_text'])
+                                raw_qs = [q.strip() for q in q_resp.split('\n') if len(q.strip()) > 10]
+                                st.session_state['custom_questions'] = [clean_llm_text(q) for q in raw_qs]
+                                st.session_state['setup_step'] = 3; st.rerun()
 
-            if st.session_state['setup_step'] == 3:
-                st.subheader("🎙️ Live Interview Simulator")
-                info = st.session_state['round_info']
-                st.info(f"⏱️ **Stage:** {info['meaning']} | **Interviewer:** {info['persona']}")
-
+            if st.session_state['setup_step'] == 3 and not st.session_state.get('interview_complete'):
+                st.subheader("🎙️ Interview Simulator")
+                info = st.session_state['round_info']; st.info(f"⏱️ **Stage:** {info['meaning']} | **Interviewer:** {info['persona']}")
                 if 'chat_history' not in st.session_state:
-                    p_lab, r_nam = st.session_state.get('selected_persona_label', 'Standard HR'), st.session_state.get('selected_round', 'General Interview')
-                    st.session_state['sys_p'] = Personas.get_interview_sys_prompt(p_lab, r_nam, sen, role, ind, st.session_state['resume_text'], st.session_state['job_desc_text'])
+                    st.session_state['sys_p'] = Personas.get_interview_sys_prompt(st.session_state['selected_persona_label'], st.session_state['selected_round'], st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], st.session_state['resume_text'], st.session_state['job_desc_text'])
                     st.session_state['chat_history'] = []
-                    first_q = st.session_state['custom_questions'][0] if st.session_state['custom_questions'] else "Let's begin."
-                    trigger_voice(first_q)
-                    st.session_state['chat_history'].append({"role": "assistant", "content": first_q})
-                    st.rerun()
+                    with st.spinner("🎙️ Coach is entering the room..."):
+                        first_q = APIClient.generate_response(st.session_state['sys_p'], "Greet the candidate. Check resume for name, or ask for it.", [], st.session_state['engine_config'], resume_context=st.session_state.get('resume_text', ""), job_context=st.session_state.get('job_desc_text', ""))
+                        first_q = clean_llm_text(first_q); trigger_voice(first_q)
+                        st.session_state['chat_history'].append({"role": "assistant", "content": first_q}); st.rerun()
 
                 for idx, msg in enumerate(st.session_state['chat_history']):
                     with st.chat_message(msg["role"], avatar=("🤖" if msg["role"] == "assistant" else "👤")):
                         st.write(msg["content"])
                         if msg["role"] == "assistant":
-                            if st.button("🔊 Replay Audio", key=f"replay_{idx}"):
-                                trigger_voice(msg["content"]); st.rerun()
-
-                st.divider()
-                audio_path = record_audio()
-                c_sub, c_end = st.columns(2)
-                if audio_path and c_sub.button("🗣️ Submit Answer", type="primary", use_container_width=True):
-                    with st.spinner("Processing..."):
-                        t, m, d, e = APIClient.process_audio(audio_path, "Balanced", "NVIDIA GPU")
-                        if not e:
-                            st.session_state['chat_history'].append({"role": "user", "content": t})
-                            with st.spinner("Thinking..."):
-                                nxt = APIClient.generate_response(st.session_state['sys_p'], t, st.session_state['chat_history'][:-1], st.session_state['engine_config'])
-                                trigger_voice(nxt)
-                                st.session_state['chat_history'].append({"role": "assistant", "content": clean_llm_text(nxt)})
-                                st.rerun()
-                if c_end.button("🛑 End Interview", use_container_width=True):
-                    st.session_state['interview_complete'] = True; st.rerun()
+                            if st.button("🔊 Replay", key=f"replay_{idx}"): trigger_voice(msg["content"]); st.rerun()
+                isolated_recorder_flow(info)
 
             if st.session_state.get('interview_complete'):
-                st.divider(); st.header("📊 Final Analysis"); st.success("Interview Complete!")
+                if 'final_feedback' not in st.session_state:
+                    with st.spinner("Analyzing..."):
+                        v = len(st.session_state['aggregated_metrics']); t_w = sum([m['metrics']['wpm'] for m in st.session_state['aggregated_metrics']])
+                        t_f = sum([m['metrics']['filler_count'] for m in st.session_state['aggregated_metrics']]); t_d = sum([m['duration'] for m in st.session_state['aggregated_metrics']])
+                        avg_w = t_w / v if v > 0 else 0; full_t = ""
+                        for msg in st.session_state['chat_history']: full_t += f"<b>{'Interviewer' if msg['role'] == 'assistant' else 'Candidate'}:</b> {msg['content']}<br><br>\n"
+                        f_p = Personas.get_final_feedback_prompt(st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], full_t)
+                        f_f = APIClient.generate_response(Personas.AI_COACH['system_prompt'], f_p, [], st.session_state['engine_config'], resume_context=st.session_state['resume_text'])
+                        HistoryManager.save_session(avg_w, t_f, "Analysis", "Multi-Turn")
+                        st.session_state.update({'final_feedback': f_f, 'full_transcript': full_t, 'avg_wpm': avg_w, 'total_fillers': t_f, 'total_duration': t_d})
+                render_final_analysis(st.session_state)
 
         with tab_history:
-            history = HistoryManager.load_history()
-            if history: st.dataframe(pd.DataFrame(history))
-            else: st.info("No history.")
+            render_history_dashboard()
 
     except Exception as e:
         st.error(f"🚨 Error: {e}"); st.code(traceback.format_exc())
 
 if __name__ == "__main__":
-    FileManager.initialize_directories(); main()
+    main()

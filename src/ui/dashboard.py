@@ -1,88 +1,103 @@
 import streamlit as st
-from datetime import datetime
+import pandas as pd
+import plotly.express as px
+import os
+import time
+from src.utils.file_manager import FileManager
+from src.utils.pdf_generator import PDFGenerator
+from src.utils.history import HistoryManager
 
-def render_dashboard(transcript, metrics, duration, selected_mode, tier, target_question, persona):
-    """Renders the single-turn Analysis Results and Export tools."""
+def render_final_analysis(session_data):
+    """Renders the multi-tab final analysis and PDF export."""
+    st.divider()
+    st.header("📊 Final Analysis")
     
-    st.subheader("📊 Analysis Results")
+    tab_feed, tab_met, tab_trans = st.tabs(["🧠 AI Feedback", "📈 Metrics", "📝 Transcript"])
     
-    # --- CONTEXT DISPLAY ---
-    st.info(f"**Target Question:** {target_question}\n\n**Interviewer Persona:** {persona}")
+    with tab_feed:
+        st.markdown(session_data['final_feedback'])
+        
+    with tab_met:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Avg Pacing", f"{session_data['avg_wpm']:.0f} WPM")
+        c2.metric("Total Fillers", session_data['total_fillers'])
+        c3.metric("Speaking Time", f"{session_data['total_duration']:.1f}s")
+        
+    with tab_trans:
+        st.markdown(session_data['full_transcript'], unsafe_allow_html=True)
     
-    # --- AI COACH EVALUATION ---
-    st.markdown("### 🧠 AI Coach Evaluation (STAR Framework)")
-    st.caption("Detailed LLM feedback is processed in the multi-turn chat loop.")
+    # PDF Export
+    pdf_p = os.path.join(FileManager.TEMP_DIR, f"report_{int(time.time())}.pdf")
+    if PDFGenerator.generate_report(
+        session_data['job_title'], 
+        session_data['industry'], 
+        {'wpm': session_data['avg_wpm'], 'fillers': session_data['total_fillers'], 'duration': session_data['total_duration']}, 
+        session_data['final_feedback'], 
+        session_data['full_transcript'], 
+        pdf_p
+    ):
+        with open(pdf_p, "rb") as f:
+            st.download_button(
+                "📄 Download PDF Report", 
+                f.read(), 
+                f"Report_{session_data['job_title']}.pdf", 
+                "application/pdf", 
+                width='stretch'
+            )
+
+def render_history_dashboard():
+    """Renders the gamified coaching progression dashboard."""
+    st.header("📈 Coaching Progression Dashboard")
+    history = HistoryManager.load_history()
     
+    if not history:
+        st.info("No history yet. Complete your first interview to see analytics!")
+        return
+
+    df = pd.DataFrame(history)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    # --- GAMIFICATION CARDS ---
+    st.markdown("### 🏆 Performance Badges")
     c1, c2, c3, c4 = st.columns(4)
-    c1.success("Situation: Analyzed")
-    c2.success("Task: Analyzed")
-    c3.warning("Action: Analyzed")
-    c4.error("Result: Analyzed")
+    
+    total_sessions = len(df)
+    avg_wpm_all = df['wpm'].mean()
+    total_fillers_all = df['fillers'].sum()
+    
+    with c1:
+        if total_sessions >= 10: st.success("🎓 Master Interviewer")
+        elif total_sessions >= 5: st.info("🏅 Seasoned Candidate")
+        else: st.info("🌱 Aspiring Professional")
+        st.caption("**Experience:** Based on your total completed sessions. 10+ for Master status.")
+    
+    with c2:
+        if 130 <= avg_wpm_all <= 160: st.success("🎯 Golden Pacer")
+        else: st.warning("🐢 Developing Rhythm")
+        st.caption("**Clarity:** Awarded for maintaining an ideal professional pace (130-160 WPM).")
+    
+    with c3:
+        if total_fillers_all < total_sessions * 2: st.success("✨ Silver Tongue")
+        else: st.info("🗣️ Work in Progress")
+        st.caption("**Eloquence:** Aim for fewer than 2 filler words per session on average.")
+    
+    with c4:
+        st.info(f"🔥 {total_sessions} Sessions")
+        st.caption("**Consistency:** Your total volume of training. Keep the streak alive!")
+
+    # --- PROGRESSION CHARTS ---
     st.divider()
-
-    # --- ACOUSTIC METRICS ---
-    st.markdown("### 📈 Fluency & Delivery")
-    feedback = metrics.get("feedback", {})
+    st.markdown("### 📊 Pacing & Clarity Trends")
     
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Tone", metrics.get("tone_label", "Neutral"), feedback.get("tone", ""), delta_color=feedback.get("tone_status", "normal"))
-    m2.metric("Speed", f"{metrics.get('wpm', 0)} WPM", feedback.get("wpm", ""), delta_color=feedback.get("wpm_status", "normal"))
-    m3.metric("Pauses", f"{metrics.get('pause_count', 0)}", feedback.get("pause", ""), delta_color=feedback.get("pause_status", "normal"))
-    m4.metric("Fillers", f"{metrics.get('filler_count', 0)}", feedback.get("filler", ""), delta_color=feedback.get("filler_status", "normal"))
-    m5.metric("Blunders", f"{metrics.get('blunder_count', 0)}", feedback.get("blunder", ""), delta_color=feedback.get("blunder_status", "normal"))
-
-    if "density_tip" in feedback:
-        st.info(f"💡 **Delivery Tip:** {feedback['density_tip']}")
-
-    # --- TRANSCRIPT ---
-    st.markdown("### 📝 Transcript")
-    st.write(transcript)
-
-    # --- REPORT GENERATOR ---
-    st.divider()
+    fig_wpm = px.line(df, x='timestamp', y='wpm', title='WPM Progression',
+                    markers=True, color_discrete_sequence=['#2980b9'])
+    fig_wpm.add_hline(y=130, line_dash="dash", line_color="green", annotation_text="Ideal Start")
+    fig_wpm.add_hline(y=160, line_dash="dash", line_color="green", annotation_text="Ideal End")
+    st.plotly_chart(fig_wpm, width='stretch')
     
-    # Generate a clean Markdown string for the download file
-    report_md = f"""# AI Interview Coach - Session Report
-**Date:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
-**Mode:** {selected_mode}
-**Interviewer Persona:** {persona}
+    fig_fill = px.bar(df, x='timestamp', y='fillers', title='Filler Word Count per Session',
+                    color_discrete_sequence=['#e74c3c'])
+    st.plotly_chart(fig_fill, width='stretch')
 
-## Target Question
-> {target_question}
-
-## Fluency & Delivery Metrics
-* **Pace:** {metrics.get('wpm', 0)} WPM
-* **Tone:** {metrics.get('tone_label', 'Neutral')}
-* **Pauses (>1.5s):** {metrics.get('pause_count', 0)}
-* **Filler Words:** {metrics.get('filler_count', 0)}
-* **Blunders:** {metrics.get('blunder_count', 0)}
-
-## Transcript
-{transcript}
-
----
-*Report generated by AI-Powered Interview Coaching System (Capstone Project)*
-"""
-    
-    # --- ACTION BUTTONS ---
-    col_retry, col_download, col_debug = st.columns([1, 1, 1])
-    
-    with col_retry:
-        if st.button("🔄 Retry Answer", type="primary", width="stretch"):
-            if 'results' in st.session_state:
-                del st.session_state['results']
-            st.rerun()
-            
-    with col_download:
-        st.download_button(
-            label="📥 Download Report",
-            data=report_md,
-            file_name=f"Interview_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-            mime="text/markdown",
-            width="stretch"
-        )
-            
-    with col_debug:
-        with st.expander("⚙️ System Stats"):
-            st.write(f"**Hardware Tier:** {tier}")
-            st.write(f"**Processing Time:** {duration:.2f}s")
+    with st.expander("📝 Detailed Session Logs"):
+        st.dataframe(df.sort_values(by='timestamp', ascending=False), width='stretch')

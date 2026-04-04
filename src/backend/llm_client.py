@@ -189,7 +189,17 @@ class LLMClient:
         url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         
-        messages = [{"role": "system", "content": system}]
+        # O-series reasoning models (o1, o3, o4, etc.) use 'max_completion_tokens'
+        # and usually require instructions in the user role
+        import re
+        is_o_series = bool(re.match(r"^o\d", self.model_name))
+        
+        messages = []
+        if is_o_series:
+            messages.append({"role": "user", "content": f"INSTRUCTIONS: {system}"})
+        else:
+            messages.append({"role": "system", "content": system})
+            
         for msg in history:
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": user})
@@ -197,9 +207,13 @@ class LLMClient:
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 800
+            "temperature": 1.0 if is_o_series else 0.7 
         }
+        
+        if is_o_series:
+            payload["max_completion_tokens"] = 1000
+        else:
+            payload["max_tokens"] = 800
         
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:

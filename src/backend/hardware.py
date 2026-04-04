@@ -3,9 +3,7 @@ import cpuinfo
 import psutil
 import subprocess
 import shutil
-from src.utils.diagnostics import get_logger, safe_execute
-
-logger = get_logger()
+from src.utils.diagnostics import safe_execute
 
 # --- DEFENSIVE IMPORT ---
 try:
@@ -16,71 +14,45 @@ except ImportError:
 
 class HardwareInfo:
     def __init__(self):
+        self.os_name = platform.system()
         try:
-            self.os_name = platform.system()
-            # Handle potential cpuinfo failures
+            self.cpu_info = cpuinfo.get_cpu_info().get('brand_raw', 'Unknown CPU')
+        except:
+            self.cpu_info = "Unknown CPU"
+        
+        # 1. NVIDIA Check
+        self.has_nvidia = TORCH_AVAILABLE and torch.cuda.is_available()
+        if not self.has_nvidia and shutil.which("nvidia-smi"):
             try:
-                self.cpu_info = cpuinfo.get_cpu_info().get('brand_raw', 'Unknown CPU')
-            except Exception:
-                self.cpu_info = "Generic CPU"
-            
-            # 1. Primary check: Torch
-            self.has_nvidia = TORCH_AVAILABLE and torch.cuda.is_available()
-            
-            # 2. Fallback check: nvidia-smi (if torch fails)
-            if not self.has_nvidia:
-                if shutil.which("nvidia-smi"):
-                    try:
-                        subprocess.check_output("nvidia-smi -L", shell=True, timeout=2)
-                        self.has_nvidia = True 
-                    except: pass
+                subprocess.check_output("nvidia-smi -L", shell=True)
+                self.has_nvidia = True 
+            except: pass
 
-            self.is_apple_silicon = platform.processor() == 'arm' and self.os_name == 'Darwin'
-            
-            # Get Total RAM for recommendations
-            try:
-                self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
-            except Exception:
-                self.total_ram_gb = 8.0 # Safe default
-        except Exception as e:
-            logger.error(f"Hardware detection failed: {e}")
-            self.os_name = "Unknown"
-            self.has_nvidia = False
-            self.is_apple_silicon = False
-            self.total_ram_gb = 4.0
+        # 2. Apple Silicon Check
+        self.is_apple_silicon = False
+        if self.os_name == "Darwin":
+            cpu_brand = self.cpu_info.lower()
+            if "apple" in cpu_brand or "m1" in cpu_brand or "m2" in cpu_brand or "m3" in cpu_brand or "m4" in cpu_brand:
+                self.is_apple_silicon = True
+        
+        self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
 
-    @safe_execute(default_val=("Balanced (Mid Spec)", "System specs unknown."), log_msg="Hardware Recommendation Error")
+    @safe_execute(default_val=("CPU & RAM Core", "Checking hardware..."), log_msg="Hardware Recommendation Error")
     def get_recommendation(self):
-        """Returns the recommended Tier based on specs."""
+        """Returns the recommended config and a help string for the user."""
         if self.has_nvidia:
-            try:
-                if TORCH_AVAILABLE and torch.cuda.is_available():
-                    vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                else:
-                    cmd = "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits"
-                    vram_mb = float(subprocess.check_output(cmd, shell=True, timeout=2).decode("utf-8").strip())
-                    vram = vram_mb / 1024
-                
-                if vram >= 4:
-                    return "Pro (High Spec)", "[OK] NVIDIA GPU detected. Pro (High Spec) ready."
-            except Exception: pass
-
+            return "NVIDIA GPU", "🚀 NVIDIA GPU detected. Use this for fastest transcription and high-accuracy models."
+        
         if self.is_apple_silicon:
-            return "Balanced (Mid Spec)", "[OK] Apple Silicon detected. Optimized for Neural Engine."
+            return "Apple Silicon", "🍎 Apple M-Series chip detected. High performance detected! Use 'Apple Silicon' mode for optimized Neural Engine processing."
         
         if self.total_ram_gb >= 12:
-            return "Balanced (Mid Spec)", "[OK] Good RAM amount (12GB+). Balanced Mode recommended."
+            return "CPU & RAM Core", "💻 Good RAM detected (12GB+). CPU mode will be stable and use 'Small' accuracy models."
+        
+        return "CPU & RAM Core", "⚠️ Low resources detected. Using CPU mode with 'Tiny' models to ensure stability."
 
-        return "Eco (Low Spec)", "[WARN] Low System Resources. Eco Mode recommended for speed."
-
-    @safe_execute(default_val="cpu", log_msg="Optimal Device Error")
-    def get_optimal_device(self):
-        if TORCH_AVAILABLE and torch.cuda.is_available(): 
-            return "cuda"
-        return "cpu"
-
-    @safe_execute(default_val="int8", log_msg="Compute Type Error")
-    def get_compute_type(self, device):
-        if device == "cuda": return "float16"
-        if self.is_apple_silicon: return "float32"
-        return "int8"
+    def get_compute_type(self, tier):
+        """Returns the ctranslate2 compute type based on hardware and tier selection."""
+        if tier == "NVIDIA GPU": return "float16"
+        if tier == "Apple Silicon": return "float32" # Apple Silicon handles float32 best via CPU/NE
+        return "int8" # Standard CPU

@@ -5,7 +5,7 @@ from src.utils.diagnostics import get_logger
 
 logger = get_logger()
 
-def record_audio():
+def record_audio(key="interview_recorder"):
     """
     Renders the audio recorder widget and saves the file locally.
     Returns: Path to the saved file (or None if no recording).
@@ -18,7 +18,7 @@ def record_audio():
             </style>
             """, unsafe_allow_html=True)
 
-        audio_value = st.audio_input("Record your answer")
+        audio_value = st.audio_input("Record your answer", key=key)
 
         if audio_value:
             # Create a timestamped filename

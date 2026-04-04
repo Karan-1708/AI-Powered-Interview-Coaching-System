@@ -37,12 +37,16 @@ class PDFGenerator:
         """
         try:
             # 1. Clean and Sanitize Input
+            # Ensure the feedback starts on a fresh line for the markdown parser
+            final_feedback = "\n" + str(final_feedback).strip()
+            
             # Standardize Unicode for Latin-1 compatibility
             final_feedback = PDFGenerator.clean_unicode(final_feedback)
             full_transcript = PDFGenerator.clean_unicode(full_transcript)
 
-            # 2. Convert LLM Markdown to HTML for the Feedback section
-            feedback_html = markdown.markdown(final_feedback)
+            # 2. Convert LLM Markdown to HTML
+            # Using 'extra' extension for better compatibility
+            feedback_html = markdown.markdown(final_feedback, extensions=['extra'])
             feedback_html = feedback_html.replace("<strong>", "<b>").replace("</strong>", "</b>")
             feedback_html = feedback_html.replace("<h3>", '<h3 style="color: #2980b9;">').replace("<h2>", '<h2 style="color: #2c3e50;">')
 

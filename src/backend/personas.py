@@ -57,21 +57,34 @@ class Personas:
     @staticmethod
     def get_interview_sys_prompt(persona_name, round_name, seniority, job_title, industry, resume_text=None, job_desc_text=None):
         prompt = (
-            f"You are acting as a {persona_name} conducting a {round_name} interview "
+            f"STRICT ROLE: You are the INTERVIEWER ({persona_name}). You are conducting a {round_name} interview "
             f"for a {seniority} {job_title} role in the {industry} industry. "
-            f"Your goal is to assess the candidate's skills based on the persona. "
-            f"Ask ONE question at a time. Keep your questions concise (1-2 sentences). "
-            f"Base your follow-ups strictly on the candidate's previous answer. "
-            f"Do not break character. Do not provide feedback yet."
+            f"NEVER answer your own questions. NEVER provide examples of how to answer. "
+            f"Your ONLY job is to listen to the candidate and ask the NEXT relevant question. "
+            f"Ask ONLY ONE question at a time. Keep your questions concise. "
+            f"Base your follow-ups strictly on the candidate's previous answer."
         )
 
-        if resume_text:
-            prompt += "\nCross-reference the candidate's answers against their provided resume. Look for inconsistencies or areas where they might be overstating their experience."
-            
         if job_desc_text:
-            prompt += "\nFocus the interview heavily on the specific requirements and key responsibilities listed in the job posting."
-            
+            prompt += (
+                "\n\n[JOB DESCRIPTION CONTEXT]\n"
+                "Scan the job description for the name of the Recruiter or Hiring Manager. "
+                "If found, impersonate that person by name. Focus heavily on the requirements listed."
+            )
+
+        if resume_text:
+            prompt += (
+                "\n\n[CANDIDATE RESUME CONTEXT]\n"
+                "Cross-reference answers against this resume. Look for inconsistencies. "
+                "If the candidate's name is in the resume, greet them by name. "
+                "If the name is NOT in the resume, your first question MUST be to ask for their name."
+            )
+        else:
+            prompt += "\n\n[GREETING INSTRUCTION]: Greet the candidate and ask for their name as your first interaction."
+
+        prompt += "\n\nIMPORTANT: Respond with ONLY the text of your question. No JSON, no brackets."
         return prompt
+
 
     @staticmethod
     def get_final_feedback_prompt(seniority, job_title, industry, full_transcript):

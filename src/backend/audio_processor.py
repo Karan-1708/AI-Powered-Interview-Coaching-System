@@ -24,17 +24,14 @@ class AudioProcessor:
 
     @safe_execute(default_val=None, log_msg="Whisper Load Error")
     def get_model(self, tier="CPU & RAM Core"):
-        """
-        Retrieves a cached model or loads a new one based on the selected compute mode.
-        """
-        # Determine device and model size based on user selection
+        """Retrieves a cached model or loads a new one based on the selected compute mode."""
         if tier == "NVIDIA GPU" and self.hw.has_nvidia:
-            device = "cuda"
-            target_model_size = "medium.en"  # High accuracy for GPU
-            compute_type = "float16"
+            device, target_model_size, compute_type = "cuda", "medium.en", "float16"
+        elif tier == "Apple Silicon" and self.hw.is_apple_silicon:
+            # Apple Silicon is extremely fast on CPU due to AMX/Neural Engine optimizations in ctranslate2
+            device, target_model_size, compute_type = "cpu", "medium.en", "float32"
         else:
             device = "cpu"
-            # Adjust CPU model based on RAM
             target_model_size = "small.en" if self.hw.total_ram_gb >= 12 else "tiny.en"
             compute_type = "int8"
 

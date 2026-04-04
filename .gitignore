@@ -1,31 +1,39 @@
-# Python / Virtual Envs
+# --- Python ---
 __pycache__/
 *.py[cod]
-*.pyc
+*$py.class
+.env
 .venv/
 env/
 venv/
-*.so
+build/
+dist/
 
-# Environment Variables
-.env
-
-# Temporary Audio & Data (Privacy Protection)
-*.wav
-*.mp3
+# --- Project Specific Data ---
 temp_data/
 logs/
+*.mp3
+*.wav
+*.pdf
+*.json
 
-# IDE & OS Settings
+# --- Streamlit ---
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# --- IDEs ---
 .vscode/
 .idea/
-.cursorrules
 .DS_Store
 
+<<<<<<< HEAD
 # Local Models (Ollama models are stored elsewhere, but just in case)
 models/
 *.bin
 *.gguf
 
 #personal files
+=======
+# --- Personal Files ---
+>>>>>>> 33f832b (push v1.4.0)
 commands.txt

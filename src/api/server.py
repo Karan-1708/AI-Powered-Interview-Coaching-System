@@ -3,6 +3,11 @@ import shutil
 import requests
 import json
 import time
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -183,11 +188,11 @@ def generate_questions(request: QuestionRequest):
         q_prompt = (
             f"Generate 3 highly specific interview questions for a {request.seniority} {request.job_title} "
             f"during the '{request.selected_round}' round in the {request.industry} industry. {context_bonus} "
-            f"Output ONLY a Python-style list of strings."
+            f"Output each question on its own new line. Do NOT use numbers, bullet points, brackets, or quotes. Output ONLY the questions."
         )
         
         response = llm.generate_response(
-            system_prompt="You are an expert interviewer. You output ONLY a Python-style list of strings.", 
+            system_prompt="You are an expert interviewer. You output ONLY the plain text of your questions, one per line.", 
             user_message=q_prompt, 
             chat_history=[]
         )

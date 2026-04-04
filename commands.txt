@@ -1,0 +1,20 @@
+backend - uvicorn src.api.server:app --reload
+          python -m uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+ngrok - ngrok http 8000
+ui - streamlit run app.py
+env activation - conda activate ai-interview-coach
+/chat share report_context.md
+ai-powered-interview-coaching-system-8tjpkf9khm9wz8folblnmx
+
+gemini chat - AI Interview Coach
+gemini --resume '79818245-4ea8-4c18-904f-3015315eedeb'
+
+Git
+git checkout -b BRANCH_NAME		                    # "-b" is for creating a new branch
+git add .
+git commit -m "NAME FOR THE GIT COMMIT"
+git push -u origin BRANCH_NAME
+
+git pull origin BRANCH_NAME
+
+git reset --soft HEAD~1                             # last commit disappears from the history, but all the code changes stay in your folder, ready to be edited or committed again.

@@ -1,4 +1,4 @@
-# --- Frontend & Analytics ---
+# --- Frontend & UI ---
 streamlit>=1.34.0
 requests>=2.31.0
 pandas>=2.1.0
@@ -7,13 +7,13 @@ fpdf2>=2.7.7
 Pillow>=10.0.0
 markdown>=3.5.2
 
-# --- Backend Server ---
+# --- Backend & API ---
 fastapi>=0.109.0
 uvicorn>=0.27.0
 python-multipart>=0.0.9
 pydantic>=2.5.3
 
-# --- AI & Audio (CUDA STACK) ---
+# --- AI, Audio & PDF ---
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.1.2+cu121
 torchaudio==2.1.2+cu121
@@ -21,14 +21,15 @@ faster-whisper>=1.0.0
 librosa>=0.10.1
 soundfile>=0.12.1
 numpy>=1.24.0
+edge-tts>=6.1.0
+pypdf>=4.0.0
 
-# --- LLM & Utilities ---
+# --- Utilities & Diagnostics ---
 ollama>=0.1.6
 psutil>=5.9.8
 py-cpuinfo>=9.0.0
-edge-tts>=6.1.0
-pdfplumber>=0.10.0
+python-dotenv>=1.0.0
 
-# --- Testing & Stress Testing ---
+# --- Testing ---
 pytest>=8.0.0
 httpx>=0.27.0
