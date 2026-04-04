@@ -20,11 +20,15 @@ from src.utils.diagnostics import get_logger, log_system_info, safe_execute
 log_system_info()
 logger = get_logger()
 
-# This must match what you set in your Streamlit Cloud "Secrets"
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "dev-key-12345")
+# Strict security: No hardcoded fallback. Must be set in .env or environment.
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 def verify_internal_key(x_internal_key: str = Header(None)):
     """Dependency to verify the internal API key for inter-service security."""
+    if not INTERNAL_API_KEY:
+        logger.critical("SECURITY ALERT: INTERNAL_API_KEY is not set in environment!")
+        raise HTTPException(status_code=500, detail="Server security misconfiguration")
+        
     if not x_internal_key or x_internal_key != INTERNAL_API_KEY:
         logger.warning(f"Unauthorized access attempt with key: {x_internal_key}")
         raise HTTPException(status_code=401, detail="Invalid Internal API Key")

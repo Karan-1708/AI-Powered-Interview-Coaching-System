@@ -18,10 +18,11 @@ dependencies:
     - python-multipart>=0.0.9
     - pydantic>=2.5.3
     - faster-whisper>=1.0.0
-    - --extra-index-url https://download.pytorch.org/whl/cu121
-    - torch==2.1.2+cu121
-    - torchaudio==2.1.2+cu121
+    - --index-url https://download.pytorch.org/whl/nightly/cu124
+    - --extra-index-url https://pypi.org/simple
+    - torch>=2.7.0.dev
     - librosa>=0.10.1
+
     - soundfile>=0.12.1
     - numpy>=1.24.0
     - edge-tts>=6.1.0

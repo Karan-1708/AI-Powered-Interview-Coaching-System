@@ -13,8 +13,8 @@ Git
 git checkout -b BRANCH_NAME		                    # "-b" is for creating a new branch
 git add .
 git commit -m "NAME FOR THE GIT COMMIT"
-git push -u origin BRANCH_NAME
+git push -u origin BRANCH_NAME                      # "-u" is for the first time setup
 
 git pull origin BRANCH_NAME
-
-git reset --soft HEAD~1                             # last commit disappears from the history, but all the code changes stay in your folder, ready to be edited or committed again.
+git reflog
+git reset --soft/hard {commit code}

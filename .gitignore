@@ -26,14 +26,10 @@ logs/
 .idea/
 .DS_Store
 
-<<<<<<< HEAD
 # Local Models (Ollama models are stored elsewhere, but just in case)
 models/
 *.bin
 *.gguf
 
-#personal files
-=======
 # --- Personal Files ---
->>>>>>> 33f832b (push v1.4.0)
 commands.txt

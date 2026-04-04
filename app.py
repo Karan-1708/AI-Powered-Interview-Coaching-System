@@ -166,7 +166,7 @@ def main():
                 m_map = {
                     "OpenAI": ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"],
                     "Anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"],
-                    "Google Gemini": ["gemini-3.1-flash", "gemini-3-flash-lite", "gemini-2.5-flash-lite"]
+                    "Google Gemini": ["gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
                 }
                 m_list = m_map.get(api_target, ["-- Other --"]) + ["-- Other --"]
                 selected_model = st.selectbox("Model", m_list)
@@ -197,7 +197,7 @@ def main():
         if st.session_state.get('play_now_bytes'):
             b64 = base64.b64encode(st.session_state['play_now_bytes']).decode()
             n = st.session_state.get('audio_nonce', 0)
-            st.components.v1.html(f'<audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><script>document.getElementById("a_{n}").play();</script>', height=0)
+            st.iframe(f'<audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><script>document.getElementById("a_{n}").play();</script>', height=0)
             st.session_state['play_now_bytes'] = None
 
         tab_coach, tab_history = st.tabs(["🎯 Live Coach", "📈 Session History"])
@@ -229,10 +229,19 @@ def main():
                         # CRITICAL: We do NOT pass resume_context here to prevent round contamination
                         resp = APIClient.generate_response("You are an expert recruiter. Return ONLY a Python list.", p, [], st.session_state['engine_config'])
                         try:
-                            import re; m = re.search(r"\[.*\]", resp, re.DOTALL)
-                            rounds = ast.literal_eval(m.group()) if m else [resp]
-                            st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
-                        except: st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
+                            import re
+                            # Clean markdown blocks and extract content between brackets
+                            clean_resp = re.sub(r'```[a-z]*\n?|```', '', resp).strip()
+                            m = re.search(r"\[.*\]", clean_resp, re.DOTALL)
+                            if m:
+                                rounds = ast.literal_eval(m.group())
+                                st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 100]
+                            else:
+                                # Line-by-line fallback
+                                lines = [re.sub(r'^\d+[\.\)]\s*', '', l).strip(' ",\'') for l in resp.split('\n') if len(l.strip()) > 3]
+                                st.session_state['rounds'] = lines[:4]
+                        except:
+                            st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
                         st.session_state['setup_step'] = 2; st.rerun()
 
                 if st.session_state['setup_step'] >= 2:

@@ -11,7 +11,7 @@ class APIClient:
     
     BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
     # Pull internal key for authentication with the backend
-    INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "dev-key-12345")
+    INTERNAL_KEY = os.getenv("INTERNAL_API_KEY")
 
     @staticmethod
     def _get_headers():

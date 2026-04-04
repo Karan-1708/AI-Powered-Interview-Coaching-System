@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import logging
+import re
 from src.utils.diagnostics import get_logger, safe_execute
 
 logger = get_logger()
@@ -20,6 +21,7 @@ class LLMClient:
             if env_host:
                 self.ollama_host = env_host
             else:
+                # Probing defaults only when necessary
                 working_host = "http://127.0.0.1:11434"
                 for host in ["http://host.docker.internal:11434", "http://127.0.0.1:11434", "http://localhost:11434"]:
                     try:
@@ -189,13 +191,12 @@ class LLMClient:
         url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         
-        # O-series reasoning models (o1, o3, o4, etc.) use 'max_completion_tokens'
-        # and usually require instructions in the user role
-        import re
-        is_o_series = bool(re.match(r"^o\d", self.model_name))
+        # Reasoning models (o1, o3, o4, gpt-5, etc.) use 'max_completion_tokens'
+        # and do not support the 'system' role or 'temperature' adjustments in the same way.
+        is_reasoning_model = bool(re.match(r"^(o\d|gpt-5)", self.model_name.lower()))
         
         messages = []
-        if is_o_series:
+        if is_reasoning_model:
             messages.append({"role": "user", "content": f"INSTRUCTIONS: {system}"})
         else:
             messages.append({"role": "system", "content": system})
@@ -206,14 +207,15 @@ class LLMClient:
         
         payload = {
             "model": self.model_name,
-            "messages": messages,
-            "temperature": 1.0 if is_o_series else 0.7 
+            "messages": messages
         }
         
-        if is_o_series:
+        if is_reasoning_model:
             payload["max_completion_tokens"] = 1000
+            # Temperature is not supported or must be 1.0 for many reasoning models
         else:
             payload["max_tokens"] = 800
+            payload["temperature"] = 0.7
         
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:
