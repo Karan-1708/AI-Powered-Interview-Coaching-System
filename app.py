@@ -197,7 +197,7 @@ def main():
         if st.session_state.get('play_now_bytes'):
             b64 = base64.b64encode(st.session_state['play_now_bytes']).decode()
             n = st.session_state.get('audio_nonce', 0)
-            st.iframe(f'<audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><script>document.getElementById("a_{n}").play();</script>', height=0)
+            st.components.v1.html(f'<audio id="a_{n}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><script>document.getElementById("a_{n}").play();</script>', height=1)
             st.session_state['play_now_bytes'] = None
 
         tab_coach, tab_history = st.tabs(["🎯 Live Coach", "📈 Session History"])
