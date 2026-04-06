@@ -69,8 +69,6 @@ def unified_status_monitor():
             st.progress(min(max(float(v_p) / 100.0, 0.0), 1.0), text=f"API VRAM: {v_u}/{v_t} GB")
     else:
         st.error("🔴 Backend: Offline")
-    
-    if st.button("🔄 Refresh Status", width='stretch'): st.rerun()
 
 def trigger_voice(text):
     """Fetches audio and sets play state."""
@@ -126,8 +124,7 @@ def main():
         # --- SIDEBAR ---
         with st.sidebar:
             st.image("assets/Data-Drifters.png", width="stretch")
-            if st.session_state.get('setup_step') != 3: unified_status_monitor()
-            else: st.info("📊 Telemetry paused for stability.")
+            unified_status_monitor()
             
             st.divider()
             st.header("⚙️ Configuration")
