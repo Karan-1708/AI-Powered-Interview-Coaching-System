@@ -1,103 +1,57 @@
-# Setup & Installation Guide
+# 📖 User Guide: AI Interview Coach
 
-This project is designed to be highly portable. While we support various environments, the **standard Python Virtual Environment (venv)** is the recommended way to set up the system.
-
----
-
-## 1. System Requirements (Prerequisites)
-
-Before setting up the Python environment, you must have the following installed on your system:
-
-### 1.1 Audio Processing (Required)
-
-- **FFmpeg**: Essential for AI transcription.
-  - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add the `bin` folder to your System PATH. 
-  - **Mac**: `brew install ffmpeg`
-  - **Linux**: `sudo apt install ffmpeg`
-
-### 1.2 GPU Acceleration (Optional but Recommended)
-
-- **NVIDIA Users**: Ensure you have the latest NVIDIA drivers installed to enable GPU acceleration.
-- **Apple Silicon Users**: No extra drivers needed; the system uses the Apple Neural Engine automatically.
+Welcome to the **AI Interview Coach**! This guide will help you get the application running on your computer with just a few clicks.
 
 ---
 
-## 2. Primary Setup: Python Virtual Environment (Recommended)
+## 🚀 One-Click Setup
 
-This method works on any system with Python 3.10 - 3.13 installed.
+### 1. Prerequisites
+Before starting, ensure you have the following installed:
+*   **Python (3.10 to 3.13)**: Download from [python.org](https://www.python.org/downloads/). *Important: Check "Add Python to PATH" during installation.*
+*   **FFmpeg**: Required for the AI to "hear" you.
+    *   **Windows**: [Download here](https://ffmpeg.org/download.html).
+    *   **Mac**: Open Terminal and type `brew install ffmpeg`.
 
-### Step 1: Create the Environment
+### 2. Launching the App
+1.  **Download & Extract** the project folder.
+2.  **Windows Users**: Double-click the `start.bat` file.
+3.  **Mac/Linux Users**: Open a terminal in the folder and run `bash start.sh`.
 
-Open your terminal in the project root folder and run:
-
-```bash
-# Create a virtual environment named '.venv'
-python -m venv .venv
-```
-
-### Step 2: Activate the Environment
-
-- **Windows**: `.\venv\Scripts\activate`
-- **Mac/Linux**: `source venv/bin/activate`
-
-### Step 3: Install High-Performance AI Engine (CUDA)
-
-To ensure the system uses your GPU (NVIDIA), run this specific command first:
-
-```bash
-# For Python 3.13 (Windows)
-pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
-
-# For Python 3.10 - 3.12 (Windows)
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
-
-### Step 4: Install Remaining Dependencies
-
-```bash
-pip install -r requirements.txt
-```
+### 3. What the Script Does
+*   Creates a private virtual environment so it doesn't mess with your computer.
+*   Installs all necessary AI components (including GPU support if you have an NVIDIA card).
+*   Launches the **Backend Engine** and the **Frontend Dashboard** automatically.
 
 ---
 
-## 3. Alternative Setup: Anaconda / Miniconda
+## 🎯 How to Use the Coach
 
-If you prefer using Conda, follow these steps:
+### Step 1: Configuration
+*   **Sidebar**: Choose your **Coach Voice** (Male/Female).
+*   **Inference Provider**: 
+    *   Select **Local (Ollama)** for 100% private, offline coaching (Requires [Ollama](https://ollama.com/) to be installed).
+    *   Select **External API** (OpenAI, Gemini, or Claude) for the highest quality coaching (Requires your own API Key).
 
-```bash
-# Create environment from the provided file
-conda env create -f environment.yml
+### Step 2: Setup your Interview
+1.  Enter your **Industry**, **Job Title**, and **Seniority**.
+2.  **Upload Context (Optional)**: Upload your Resume or the Job Description. The AI will use these to ask highly personalized questions.
+3.  Click **Generate Interview Rounds** to see your career path.
+4.  Select a **Round** (e.g., Technical Round) and an **Interviewer Style**.
 
-# Activate the environment
-conda activate ai-interview-coach
-```
+### Step 3: The Interview
+1.  The Coach will greet you (by name if it's in your resume!) and ask the first question.
+2.  Click the **Record** button to speak your answer.
+3.  Click **Submit Answer** to send it to the coach.
+4.  When finished, click **End Interview & Analyze**.
+
+### Step 4: Performance Review
+*   View your **Overall Impression** and **Key Strengths**.
+*   Check your **Acoustic Metrics**: See your Words Per Minute (WPM) and how many "filler words" (um, uh, like) you used.
+*   **Export**: Download your full feedback and transcript as a professional PDF.
 
 ---
-## 4. Troubleshooting Hardware Detection
 
-If the backend logs show `CUDA: NOT DETECTED`:
-
-1. Verify your installation by running: `pip list`
-2. Ensure `torch` has a `+cuXXX` suffix (e.g., `2.7.0.dev+cu124`).
-3. If it shows a plain version number, the CPU version was installed by mistake. Re-run **Step 3** from the Primary Setup above.
-
----
-## 5. Launching the Program
-To ensure all components communicate correctly, you must launch them in the following order:
-
-### Step 1: Start Ollama (For Local AI & Privacy)
-Ensure [Ollama](https://ollama.com/) is installed and running on your system. This is required if you want to use the **Local (Ollama)** provider for 100% private, offline coaching.
-
-### Step 2: Start the Backend (FastAPI)
-Open a terminal, activate your environment (`venv` or `conda`), and run:
-```bash
-# From the project root
-python -m uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### Step 3: Start the Frontend (Streamlit)
-Open a **second** terminal, activate your environment, and run:
-```bash
-# From the project root
-streamlit run app.py
-```
+## 🔐 Privacy & Safety
+*   **Your Data stays Local**: All audio recordings and transcripts are stored on your own computer in the `temp_data` folder.
+*   **Instant Wipe**: Use the **"Delete All Data"** button in the sidebar to permanently erase all session history and recordings.

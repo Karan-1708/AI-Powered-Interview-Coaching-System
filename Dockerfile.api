@@ -2,20 +2,25 @@ FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
 WORKDIR /app
 
-# Install system audio dependencies + git for some pip installs
+# Install system dependencies
+# ffmpeg is required for Whisper and edge-tts
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    git \
+    libasound2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Metadata for the build
-LABEL project="Data Drifters AI Coach"
-LABEL component="FastAPI Backend"
+# Copy source code
+COPY src/ ./src/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Labels for the build
+LABEL project="Data Drifters AI Coach"
+LABEL component="FastAPI Backend"
+
+# Run the server
+CMD ["python", "-m", "uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

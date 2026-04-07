@@ -268,7 +268,7 @@ def main():
                         # Generate a dynamic opening based on the system prompt
                         first_q = APIClient.generate_response(
                             st.session_state['sys_p'], 
-                            "Start the interview. LOOK at my Resume Context provided and greet me by my name if it is there. If you cannot find my name, introduce yourself and ask for my name.", 
+                            "Start the interview. Greet me and ask ONLY your first question. If my name is in the resume, use it. If not, ask for it.", 
                             [], 
                             st.session_state['engine_config'],
                             resume_context=st.session_state.get('resume_text', ""),

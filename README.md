@@ -1,97 +1,57 @@
-# 🎙️ AI-Powered Interview Coaching System (MVP)
+# 🎙️ AI-Powered Interview Coaching System
 
-### *Overview*
-The **AI-Powered Interview Coaching System** is a locally hosted, privacy-first application designed to democratize access to high-quality interview preparation. It provides a secure, offline environment for candidates to practice behavioral and technical interviews, leveraging advanced AI for real-time transcription, acoustic analysis, and semantic feedback.
+### *Master your next interview with a coach that never sleeps.*
 
----
-
-## 🚀 Key Features
-
-### 🧠 Dual-Engine LLM Support
-- **Local Inference:** Seamless integration with **Ollama** (Llama 3, Mistral, Gemma) for 100% offline processing.
-- **Cloud Frontier:** Support for **OpenAI (GPT-4o)**, **Anthropic (Claude 3.5)**, and **Google Gemini** for high-performance coaching when internet is available.
-- **Smart Connection Testing:** Built-in diagnostic tools to verify API and Local LLM status.
-
-### 👂 Advanced Acoustic Analysis ("The Ears")
-- **Real-time Transcription:** Powered by `faster-whisper` for high-speed, verbatim accuracy.
-- **Pacing & Fluency:** Automatically calculates **Words Per Minute (WPM)** and flags "um", "uh", and "like" filler words.
-- **Explicit Compute Allocation:** Choose between **NVIDIA GPU** or **CPU & RAM Core** directly in the UI to optimize performance for your specific hardware.
-- **Hardware-Agnostic Engine:** Intelligent backend that auto-detects CUDA, CoreML, or standard CPU instructions.
-
-### 🎭 Multi-Persona Interview Simulation
-- **Dynamic Interviewers:** Choose between a **Friendly HR Recruiter**, a **Strict Technical Lead**, or a high-pressure **Stress Interviewer**.
-- **Context-Aware Questions:** Generates role-specific questions based on your industry, job title, and seniority.
-- **STAR Framework Evaluation:** AI Coach provides structured feedback based on the Situation, Task, Action, and Result (STAR) method.
-
-### 📊 Dashboard & Reporting
-- **Interactive Analytics:** Visualize your pacing and filler word trends over time with Plotly charts.
-- **Session History:** Track your progress across multiple practice sessions.
-- **Enterprise PDF Reports:** Generate professional, downloadable feedback summaries including full transcripts and acoustic metrics.
-
-### 🖥️ Hardware Telemetry
-- **Live Monitoring:** Real-time sidebar dashboard showing CPU, RAM, and NVIDIA GPU/VRAM utilization.
-- **OOM Protection:** Intelligent compute allocation to prevent system crashes during heavy AI inference.
+Welcome to the **AI-Powered Interview Coaching System**! Whether you are a first-time job seeker or a seasoned professional, our system is designed to turn the nerve-wracking interview process into a confident, data-driven conversation.
 
 ---
 
-## 🛠️ Tech Stack
-- **Frontend:** Streamlit (Python)
-- **Backend:** FastAPI (Uvicorn)
-- **AI/ML:** Faster-Whisper, PyTorch, Librosa
-- **Database:** Local JSON-based Session Management
-- **Containerization:** Docker & Docker Compose (NVIDIA Container Toolkit supported)
+## 🤔 What is this?
+Preparing for interviews is hard. Standard "practice questions" lists are static and impersonal. We built an intelligent system that acts as a real-time interviewer. It listens to your voice, understands your background through your resume, and gives you professional feedback—all while keeping your data private on your own machine.
+
+## 🎯 Our Goal
+Our mission is to **democratize professional coaching**. High-quality interview prep usually costs hundreds of dollars. We want to provide that same level of elite, personalized feedback to everyone, for free, using the power of local and cloud-based AI.
 
 ---
 
-## 📦 Installation & Setup
+## 🌟 Why You'll Love It
 
-### Option 1: Local Development (Conda)
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Karan-1708/AI-Powered-Interview-Coaching-System.git
-   cd ai-interview-coach
-   ```
-2. **Create the environment:**
-   ```bash
-   conda env create -f environment.yml
-   conda activate ai-interview-coach
-   ```
-3. **Run the Backend API:**
-   ```bash
-   python src/api/server.py
-   ```
-4. **Run the Streamlit UI:**
-   ```bash
-   streamlit run app.py
-   ```
-
-### Option 2: Docker Compose (Recommended for GPU)
-Ensure you have [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed.
-```bash
-docker-compose up --build
-```
+*   **🎭 Choose Your Vibe**: Practice with a **Friendly HR** recruiter, a **Strict Tech Lead**, or face the heat with a **Stress Interviewer**.
+*   **📂 It Knows You**: Upload your **Resume** or a **Job Description**. The AI doesn't just ask random questions; it asks about *your* projects, *your* skills, and the *specific* role you want.
+*   **🗣️ Real Conversations**: No typing required! Speak naturally. The system transcribes your words in real-time and even calculates your **pacing (Words Per Minute)**.
+*   **🚩 Filler Word Alerts**: Are you saying "um", "uh", or "like" too much? Our "AI Ears" flag these filler words to help you sound more polished.
+*   **📈 Professional Reports**: At the end of every session, get a full **STAR Framework** evaluation and a downloadable PDF report of your performance.
+*   **🔒 Privacy First**: With **Ollama** support, you can run the entire coach offline. Your voice and your resume never have to leave your computer.
 
 ---
 
-## 🔐 Security & Privacy
-- **Local First:** All audio recordings and transcripts are stored in `./temp_data` and can be wiped instantly using the **"Delete All Data"** button in the UI.
-- **Internal API Security:** Secure communication between the UI and API using an internal `X-Internal-Key` header.
-- **No Data Harvesting:** Your interview data never leaves your machine unless you explicitly configure an External API provider.
+## 🚀 Ready to Start?
+
+If you just want to get the app running and start practicing, follow our **One-Click Launch** guide:
+
+### 👉 **[Read the User Guide](User-Guide.md)** 👈
+*(Best for everyone. Shows you how to install and launch the app like a regular program.)*
 
 ---
 
-## 🧪 Testing
-The system includes a comprehensive `pytest` suite:
-```bash
-$env:PYTHONPATH = "."; pytest tests/
-```
+## 🛠️ For the Curious & Creators
+
+Want to know how the "brain" works? Or maybe you want to contribute to the code?
+
+*   **[Technical Documentation](DOCUMENTATION.md)**: A deep dive into the architecture, AI engines, and how the frontend talks to the backend.
+*   **[Developer Guide](Dev-Guide.md)**: Step-by-step instructions for setting up an IDE, running tests, and manual installation.
 
 ---
 
 ## 📜 License
-This project is source-available under the **PolyForm Noncommercial License 1.0.0**. 
-- **Copyright Holders:** Karanveer Singh, Amel Korandippillil Sunil, Orlando Santiago Cardenas Vargas.
-- **Usage:** Free for non-commercial and educational use with prior permission.
+This project is shared under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. It is free for personal and educational use.
 
 ---
-*Built with ❤️ by the Data Drifters Team.*
+
+## 💡 A Note from the Team
+This project was made with ❤️ by newbie developers who wanted to build something that actually helps people. 
+
+Many thanks to **Gemini** for doing the hardest work without ever complaining (and for being way more patient with our bugs than we were!).
+
+---
+*Built by the Data Drifters Team.*

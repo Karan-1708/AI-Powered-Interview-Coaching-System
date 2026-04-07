@@ -25,6 +25,7 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+.geminiignore
 
 # Local Models (Ollama models are stored elsewhere, but just in case)
 models/
@@ -33,3 +34,4 @@ models/
 
 # --- Personal Files ---
 commands.txt
+template.txt

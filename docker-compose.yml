@@ -4,14 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: interview_api
-    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-key-12345}
+      - INTERNAL_API_KEY=dev-key-12345
+      - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
-      - ./src:/app/src
       - ./temp_data:/app/temp_data
       - ./logs:/app/logs
     deploy:
@@ -19,7 +18,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0']
+              count: all
               capabilities: [gpu]
 
   ui:
@@ -27,15 +26,18 @@ services:
       context: .
       dockerfile: Dockerfile.ui
     container_name: interview_ui
+    restart: unless-stopped
     ports:
       - "8501:8501"
     depends_on:
       - api
     environment:
       - API_URL=http://api:8000
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-dev-key-12345}
+      - INTERNAL_API_KEY=dev-key-12345
     volumes:
-      - ./app.py:/app/app.py
-      - ./src:/app/src
       - ./temp_data:/app/temp_data
-      - ./logs:/app/logs
+      - ./assets:/app/assets
+
+networks:
+  default:
+    name: ai_coach_network

@@ -2,20 +2,27 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies for Audio and TTS
+# Install basic system tools
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    espeak \
-    libespeak1 \
-    git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application files
+COPY app.py .
+COPY src/ ./src/
+COPY assets/ ./assets/
+
 EXPOSE 8501
 
-# Set the working directory to include 'src' in python path
-ENV PYTHONPATH=/app
+# Healthcheck for Streamlit
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+
+# Metadata
+LABEL project="Data Drifters AI Coach"
+LABEL component="Streamlit Frontend"
 
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
