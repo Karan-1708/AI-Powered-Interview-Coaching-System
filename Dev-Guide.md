@@ -1,3 +1,5 @@
+Data Drifters Logo
+
 # 🛠️ Developer Guide: AI Interview Coach
 
 This guide is for developers who want to modify the source code, run tests, or integrate this system into a larger architecture.
@@ -8,57 +10,33 @@ This guide is for developers who want to modify the source code, run tests, or i
 
 The system is built as a decoupled **Client-Server** application:
 
-- **Backend (FastAPI)**: Handles heavy lifting: Whisper transcription, LLM API routing, local Ollama orchestration, and hardware telemetry.
+- **Backend (FastAPI)**: Manages AI heavy-lifting (Whisper, LLM routing, and acoustic scoring).
 - **Frontend (Streamlit)**: A reactive dashboard for audio recording, chat UI, and Plotly analytics.
 - **Acoustic Engine**: Uses `librosa` and `faster-whisper` for real-time speech-to-text and metric extraction.
 
 ---
 
-## 🔧 Manual Installation
+## 🔧 Installation & Setup
 
-### 1. Environment Setup
+### The Automated Way (Recommended)
 
-We recommend using **Python 3.10 to 3.13**.
+Our `**install.py`** script is designed to detect your hardware and configure the environment automatically.
 
-#### The Quick Way (Recommended)
+1. Open your IDE (VS Code, Cursor, etc.).
+2. Open a terminal and run:
+  ```bash
+    python install.py
+  ```
+3. **What happens**: The script upgrades pip, uninstalls conflicting CPU versions of PyTorch, detects your OS/Hardware (Windows CUDA vs Apple Silicon vs Linux), installs the "Sweet Version" of the AI engine, downloads portable FFmpeg (on Windows), and sets up your `.env`.
 
-Open your IDE (VS Code, Cursor, etc.) and run the following in your terminal:
-
-```bash
-python -m venv .venv
-# Activate your venv, then:
-python install.py
-```
-
-This script will automatically detect your OS and hardware to install the optimized version of PyTorch and all dependencies.
-
-#### The Manual Way
+### The Manual Way
 
 If you prefer total control:
 
-```bash
-# Create and activate environment
-python -m venv .venv
-source .venv/bin/activate  # Mac/Linux
-.\venv\Scripts\activate     # Windows
-
-```
-
-### 2. Dependency Management
-
-Install all core libraries:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Environment Variables (`.env`)
-
-Create a `.env` file in the root directory. Copy the structure from `.env.example`:
-
-- `INTERNAL_API_KEY`: Used for authentication between Frontend and Backend.
-- `API_URL`: The URL where the Backend is reachable (default `http://127.0.0.1:8000`).
-- `OLLAMA_HOST`: The local endpoint for Ollama (default `http://127.0.0.1:11434`).
+1. **Create venv**: `python -m venv .venv`
+2. **Install Engine**: Use the specific index for your hardware (refer to `install.py` logic for URL links).
+3. **Install Requirements**: `pip install -r requirements.txt`
+4. **Security**: Copy `.env.example` to `.env` and set your `INTERNAL_API_KEY`.
 
 ---
 
@@ -104,4 +82,4 @@ The system is fully containerized.
 docker-compose up --build
 ```
 
-*Note: Ensure you have the NVIDIA Container Toolkit installed if you want GPU support inside Docker.*
+*Note: The containers automatically handle dependency installation for standard Linux/NVIDIA environments.*

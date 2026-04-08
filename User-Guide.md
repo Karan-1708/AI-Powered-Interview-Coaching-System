@@ -1,57 +1,57 @@
+![Data Drifters Logo](./assets/Data-Drifters.png)
+
 # 📖 User Guide: AI Interview Coach
 
-Welcome to the **AI Interview Coach**! This guide will help you get the application running on your computer with just a few clicks.
+Welcome to the **AI Interview Coach**! This guide will help you get the application running on your computer with just a few clicks. Our system is designed to be "Zero-Config," meaning the setup scripts handle the technical details for you.
 
 ---
 
-## 🚀 One-Click Setup
+## 🚀 One-Click Startup (Recommended)
 
-### 1. Prerequisites
-Before starting, ensure you have the following installed:
-*   **Python (3.10 to 3.13)**: Download from [python.org](https://www.python.org/downloads/). *Important: Check "Add Python to PATH" during installation.*
-*   **FFmpeg**: Required for the AI to "hear" you.
-    *   **Windows**: [Download here](https://ffmpeg.org/download.html).
-    *   **Mac**: Open Terminal and type `brew install ffmpeg`.
+This is the fastest way to get started. The startup scripts will automatically check for Python, download audio drivers (FFmpeg), and configure your AI engine.
 
-### 2. Launching the App
-1.  **Download & Extract** the project folder.
-2.  **Windows Users**: Double-click the `start.bat` file.
-3.  **Mac/Linux Users**: Open a terminal in the folder and run `bash start.sh`.
+### 1. Download & Launch
+1.  **Download & Extract** the project folder to a location on your computer.
+2.  **Windows Users**: Double-click the **`start.bat`** file.
+    *   *Note: If Python is missing, the script will ask to install it for you using Windows Winget.*
+3.  **Mac/Linux Users**: Open a terminal in the folder and run **`bash start.sh`**.
 
-### 3. What the Script Does
-*   Creates a private virtual environment so it doesn't mess with your computer.
-*   Installs all necessary AI components (including GPU support if you have an NVIDIA card).
-*   Launches the **Backend Engine** and the **Frontend Dashboard** automatically.
+### 2. What the Script Does Automatically
+*   **Auto-Python**: Installs Python 3.12 if it's not detected (Windows).
+*   **Portable Audio**: Downloads a portable version of **FFmpeg** so you don't have to configure system variables.
+*   **Smart AI Engine**: Detects if you have an NVIDIA GPU or an Apple M-Series chip and installs the high-performance version of the AI "brain."
+*   **Virtual Environment**: Creates a private space for the app so it doesn't affect your other programs.
 
 ---
 
 ## 🎯 How to Use the Coach
 
 ### Step 1: Configuration
-*   **Sidebar**: Choose your **Coach Voice** (Male/Female).
+*   **Coach Voice**: Choose between **Male** or **Female** in the sidebar.
+*   **Compute Allocation**: Check the **"💡 Hardware Helper"** in the sidebar. It will tell you whether to select **NVIDIA GPU**, **Apple Silicon**, or **CPU** based on your detected hardware.
 *   **Inference Provider**: 
-    *   Select **Local (Ollama)** for 100% private, offline coaching (Requires [Ollama](https://ollama.com/) to be installed).
-    *   Select **External API** (OpenAI, Gemini, or Claude) for the highest quality coaching (Requires your own API Key).
+    *   Select **Local (Ollama)** for 100% private sessions (Requires [Ollama](https://ollama.com/) to be running).
+    *   Select **External API** (OpenAI, Gemini, or Claude) for cloud-based coaching (Requires an API Key).
 
 ### Step 2: Setup your Interview
 1.  Enter your **Industry**, **Job Title**, and **Seniority**.
-2.  **Upload Context (Optional)**: Upload your Resume or the Job Description. The AI will use these to ask highly personalized questions.
-3.  Click **Generate Interview Rounds** to see your career path.
-4.  Select a **Round** (e.g., Technical Round) and an **Interviewer Style**.
+2.  **Contextual Data (Optional)**: Upload your **Resume** or a **Job Description**. The AI will scan these to ask highly personalized questions about your actual background.
+3.  Click **Generate Interview Rounds** to see your tailored path.
+4.  Select a **Round** and an **Interviewer Style**.
 
 ### Step 3: The Interview
-1.  The Coach will greet you (by name if it's in your resume!) and ask the first question.
-2.  Click the **Record** button to speak your answer.
+1.  The Coach will greet you personally and ask the first question.
+2.  Click **Record** to speak, and **Stop** when finished.
 3.  Click **Submit Answer** to send it to the coach.
-4.  When finished, click **End Interview & Analyze**.
+4.  Need to hear it again? Click the **🔊 Replay** button directly under the AI's message.
 
 ### Step 4: Performance Review
-*   View your **Overall Impression** and **Key Strengths**.
-*   Check your **Acoustic Metrics**: See your Words Per Minute (WPM) and how many "filler words" (um, uh, like) you used.
-*   **Export**: Download your full feedback and transcript as a professional PDF.
+*   Click **End Interview & Analyze** to see your results.
+*   Check your **Acoustic Metrics**: See your pacing (WPM) and filler word usage.
+*   **Export**: Download a professional PDF report of your entire session.
 
 ---
 
 ## 🔐 Privacy & Safety
-*   **Your Data stays Local**: All audio recordings and transcripts are stored on your own computer in the `temp_data` folder.
-*   **Instant Wipe**: Use the **"Delete All Data"** button in the sidebar to permanently erase all session history and recordings.
+*   **Local Storage**: All recordings and transcripts stay on your machine in the `temp_data` folder.
+*   **Instant Wipe**: Use the **"Delete All Data"** button in the "Danger Zone" to permanently erase everything.
