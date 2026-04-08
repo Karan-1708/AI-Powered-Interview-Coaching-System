@@ -24,8 +24,15 @@ if not exist ".venv\Scripts\activate.bat" (
     echo [INFO] Upgrading pip...
     python -m pip install --upgrade pip
     
-    echo [INFO] Installing CUDA-enabled PyTorch (GPU Support)...
-    pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+    :: Logic to pick the "Sweet Version" of Torch for Windows
+    python -c "import sys; exit(0 if sys.version_info >= (3, 13) else 1)" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo [INFO] Python 3.13 detected. Installing Nightly CUDA 12.4 for best compatibility...
+        pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+    ) else (
+        echo [INFO] Python 3.10-3.12 detected. Installing Stable CUDA 12.1...
+        pip install torch --index-url https://download.pytorch.org/whl/cu121
+    )
     
     echo [INFO] Installing remaining dependencies...
     pip install -r requirements.txt

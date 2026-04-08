@@ -20,14 +20,28 @@ The system is built as a decoupled **Client-Server** application:
 
 We recommend using **Python 3.10 to 3.13**.
 
+#### The Quick Way (Recommended)
+
+Open your IDE (VS Code, Cursor, etc.) and run the following in your terminal:
+
+```bash
+python -m venv .venv
+# Activate your venv, then:
+python install.py
+```
+
+This script will automatically detect your OS and hardware to install the optimized version of PyTorch and all dependencies.
+
+#### The Manual Way
+
+If you prefer total control:
+
 ```bash
 # Create and activate environment
 python -m venv .venv
 source .venv/bin/activate  # Mac/Linux
-.venv\Scripts\Activate.ps1     # Windows
+.\venv\Scripts\activate     # Windows
 
-# Install CUDA-enabled Torch (Recommended for NVIDIA GPUs)
-pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
 ```
 
 ### 2. Dependency Management
@@ -53,7 +67,7 @@ Create a `.env` file in the root directory. Copy the structure from `.env.exampl
 ### Start Backend
 
 ```bash
-python -m uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.api.server:app --reload
 ```
 
 ### Start Frontend

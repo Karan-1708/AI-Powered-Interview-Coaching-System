@@ -1,35 +1,33 @@
-# --- Frontend & UI ---
+# --- Core Frameworks ---
 streamlit>=1.34.0
-requests>=2.31.0
-pandas>=2.1.0
-plotly>=5.18.0
-fpdf2>=2.7.7
-Pillow>=10.0.0
-markdown>=3.5.2
-
-# --- Backend & API ---
 fastapi>=0.109.0
 uvicorn>=0.27.0
 python-multipart>=0.0.9
 pydantic>=2.5.3
+python-dotenv>=1.0.0
 
-# --- AI, Audio & PDF ---
---index-url https://download.pytorch.org/whl/nightly/cu124
---extra-index-url https://pypi.org/simple
-torch>=2.7.0.dev
-faster-whisper>=1.0.0
+# --- Data & Analytics ---
+pandas>=2.1.0
+plotly>=5.18.0
+numpy>=1.24.0,<2.0.0
 
-librosa>=0.10.1
-soundfile>=0.12.1
-numpy>=1.24.0
-edge-tts>=6.1.0
-pypdf>=4.0.0
-
-# --- Utilities & Diagnostics ---
-ollama>=0.1.6
+# --- Utilities ---
+requests>=2.31.0
+fpdf2>=2.7.7
+Pillow>=10.0.0
+markdown>=3.5.2
 psutil>=5.9.8
 py-cpuinfo>=9.0.0
-python-dotenv>=1.0.0
+pypdf>=4.0.0
+
+# --- AI Engines (Base) ---
+# Specific versions of Torch are handled by the startup scripts 
+# to ensure hardware compatibility (CUDA vs Apple Silicon).
+faster-whisper>=1.0.0
+librosa>=0.10.1
+soundfile>=0.12.1
+edge-tts>=6.1.0
+ollama>=0.1.6
 
 # --- Testing ---
 pytest>=8.0.0

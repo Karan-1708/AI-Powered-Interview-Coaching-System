@@ -23,20 +23,34 @@ if [ ! -d ".venv" ]; then
     echo "[INFO] Activating virtual environment..."
     source .venv/bin/activate
     
-    echo "[INFO] Upgrading pip..."
+    echo [INFO] Upgrading pip...
     pip install --upgrade pip
-    
-    echo "[INFO] Installing PyTorch..."
+
+    echo [INFO] Installing optimized AI Engine (Torch)...
     if [ "$(uname)" == "Darwin" ]; then
-        # macOS: Use default PyPI for Metal (MPS) support
-        pip install torch
+        # MacOS - Check for Apple Silicon (M-series) vs Intel
+        if [ "$(uname -m)" == "arm64" ]; then
+            echo "[INFO] Apple Silicon detected. Installing Torch with MPS/Metal support..."
+            pip install torch
+        else
+            echo "[INFO] Apple Intel detected. Installing standard Torch..."
+            pip install torch
+        fi
     else
-        # Linux: Install CUDA-enabled PyTorch
-        pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+        # Linux - Check Python version for CUDA wheels
+        PYTHON_VER=$($PYTHON_CMD -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        if [[ "$PYTHON_VER" == "3.13" ]]; then
+            echo "[INFO] Linux + Python 3.13 detected. Installing Nightly CUDA 12.4..."
+            pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu124
+        else
+            echo "[INFO] Linux detected. Installing Stable CUDA 12.1..."
+            pip install torch --index-url https://download.pytorch.org/whl/cu121
+        fi
     fi
-    
-    echo "[INFO] Installing remaining dependencies..."
+
+    echo [INFO] Installing remaining dependencies...
     pip install -r requirements.txt
+
 else
     echo "[INFO] Activating existing virtual environment..."
     source .venv/bin/activate
