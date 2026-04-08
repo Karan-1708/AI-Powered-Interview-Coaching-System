@@ -91,8 +91,9 @@ def log_system_info():
         logger.info(f"Architecture: {platform.architecture()[0]}")
         logger.info(f"Total RAM: {mem.total / (1024**3):.2f} GB")
         
-        # Check for FFmpeg
-        if shutil.which("ffmpeg"):
+        # Check for FFmpeg (System or Local bin folder)
+        local_ffmpeg = os.path.join(os.getcwd(), "bin", "ffmpeg.exe")
+        if shutil.which("ffmpeg") or os.path.exists(local_ffmpeg):
             logger.info("FFmpeg: Detected [OK]")
         else:
             logger.warning("FFmpeg: NOT DETECTED [FAILED]")

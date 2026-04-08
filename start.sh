@@ -4,7 +4,22 @@ echo "==================================================="
 echo "  AI Interview Coach - Mac/Linux Startup"
 echo "==================================================="
 
-# Check for Python
+# 1. Check for FFmpeg
+if ! command -v ffmpeg &> /dev/null; then
+    echo "[INFO] FFmpeg not found. Attempting install..."
+    if [ "$(uname)" == "Darwin" ]; then
+        if command -v brew &> /dev/null; then
+            brew install ffmpeg
+        else
+            echo "[ERROR] Homebrew not found. Please install FFmpeg manually."
+            exit 1
+        fi
+    else
+        sudo apt update && sudo apt install -y ffmpeg
+    fi
+fi
+
+# 2. Check for Python
 if command -v python3 &> /dev/null; then
     PYTHON_CMD="python3"
 elif command -v python &> /dev/null; then
