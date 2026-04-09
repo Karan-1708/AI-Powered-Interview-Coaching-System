@@ -5,7 +5,7 @@ Karanveer Singh (aka Karan Gill)
 Amel Korandippillil Sunil
 Orlando Santiago Cardenas Vargas
 
-Required Notice: Copyright © 2026 Karanveer Singh, Amel Korandippillil Sunil, Orlando Santiago Cardenas Vargas. <https://github.com/Karan-1708/AI-Powered-Interview-Coaching-System>
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
 
 Acceptance
 
@@ -37,7 +37,7 @@ Notices
 You must ensure that anyone who gets a copy of any part of
 the software from you also gets a copy of these terms or the
 URL for them above, as well as copies of any plain-text lines
-beginning with `Required Notice:` that the licensor provided
+beginning with 'Required Notice:' that the licensor provided
 with the software.
 
 Changes and New Works License
@@ -54,7 +54,10 @@ to license, that you would infringe by using the software.
 
 Noncommercial Purposes
 
-Any noncommercial purpose is a permitted purpose.
+Any noncommercial purpose is a permitted purpose. Commercial use of the Software is strictly prohibited. Commercial use includes, but is not limited to:
+- Selling the Software or derivatives.
+- Using the Software in paid products or services.
+- Using the Software for financial gain or commercial advantage.
 
 Personal Uses
 
@@ -72,6 +75,9 @@ organization, environmental protection organization,
 or government institution is use for a permitted purpose
 regardless of the source of funding or obligations resulting
 from the funding.
+
+Educational Use
+- Use of this Software for educational purposes is highly encouraged. If you are an educational institution using this as a free resource for students, please ensure compliance with the "Noncommercial Organizations" clause above.
 
 Fair Use
 
@@ -103,6 +109,11 @@ and take practical steps to correct past violations, within
 32 days of receiving notice.  Otherwise, all your licenses
 end immediately.
 
+External Dependencies Disclaimer
+
+- This license applies only to the code written in this repository.
+- All external libraries, APIs, tools, software, programs, datasets, or other third-party resources used in this project are subject to their own licenses. Users must comply with those licenses separately.
+
 No Liability
 
 As far as the law allows, the software comes as is, without
@@ -112,32 +123,23 @@ or nature of the software, under any kind of legal claim.
 
 Definitions
 
-The licensor is the individual or entity offering these
+The "licensor" is the individual or entity offering these
 terms, and the software is the software the licensor makes
 available under these terms.
 
-You refers to the individual or entity agreeing to these
+"You" refers to the individual or entity agreeing to these
 terms.
 
-Your company is any legal entity, sole proprietorship,
+"Your company" is any legal entity, sole proprietorship,
 or other kind of organization that you work for, plus all
 organizations that have control over, are under the control of,
-or are under common control with that organization. Control
+or are under common control with that organization.  "Control"
 means ownership of substantially all the assets of an entity,
 or the power to direct its management and policies by vote,
-contract, or otherwise. Control can be direct or indirect.
+contract, or otherwise.  Control can be direct or indirect.
 
-Your licenses are all the licenses granted to you for the
+"Your licenses" are all the licenses granted to you for the
 software under these terms.
 
-Use means anything you do with the software requiring one
+"Use" means anything you do with the software requiring one
 of your licenses.
-
-Additional Project Disclaimers
-
-1. External Dependencies Disclaimer
-- This license applies only to the custom code and logic written in this repository.
-- All external libraries, APIs (OpenAI, Anthropic, Google Gemini), tools (Ollama, FFmpeg), software (FastAPI, Streamlit), programs, datasets, or other third-party resources used in this project are subject to their own respective licenses. Users must comply with those licenses separately.
-
-2. Educational Use
-Use of this Software for educational purposes is highly encouraged. If you are an educational institution using this as a free resource for students, please ensure compliance with the "Noncommercial Organizations" clause above.
