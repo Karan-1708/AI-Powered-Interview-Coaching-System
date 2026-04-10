@@ -6,10 +6,6 @@ import ast
 import time
 import traceback
 import base64
-from dotenv import load_dotenv
-
-# Load .env file if it exists (for local testing)
-load_dotenv()
 import re
 
 # --- PATH INJECTION ---
@@ -43,14 +39,16 @@ def get_cached_models():
     return APIClient.get_local_models()
 
 # --- UI COMPONENTS ---
-@st.fragment(run_every=5)
+@st.fragment(run_every=3)
 def unified_status_monitor():
-    """Renders live telemetry and connection indicators."""
+    """Renders live telemetry. No caching here to ensure instant updates upon config change."""
     hw_status = APIClient.get_hardware_status()
     st.subheader("🔌 Connection Status")
+    
     if hw_status:
         st.success("🟢 Backend: Online")
         if 'engine_config' in st.session_state:
+            # Instant probe (no cache) ensures the badge changes immediately when you edit keys/providers
             success, msg = APIClient.test_connection(st.session_state['engine_config'])
             if success: st.success("🟢 AI Engine: Ready")
             else: st.error(f"🔴 AI Engine: {msg.split('.')[0]}")
@@ -90,7 +88,6 @@ def isolated_recorder_flow(info):
     audio_path = record_audio(key=f"recorder_{st.session_state['rec_nonce']}")
     c_sub, c_end = st.columns(2)
     
-    # Get current compute from config
     compute_type = st.session_state.get('engine_config', {}).get('compute', 'CPU & RAM Core')
     
     if audio_path and c_sub.button("🗣️ Submit Answer", type="primary", width='stretch'):
@@ -124,29 +121,29 @@ def main():
         # --- SIDEBAR ---
         with st.sidebar:
             st.image("assets/Data-Drifters.png", width="stretch")
-            unified_status_monitor()
             
-            st.divider()
             st.header("⚙️ Configuration")
             
-            # --- COMPUTE ALLOCATION WITH HARDWARE HELPER ---
+            # 1. Compute
             hw = HardwareInfo()
             rec_mode, rec_text = hw.get_recommendation()
-            c_label = "Compute Allocation"
-            compute_options = ["NVIDIA GPU", "CPU & RAM Core"]
-            if hw.is_apple_silicon: compute_options = ["Apple Silicon", "CPU & RAM Core"]
-            compute_target = st.radio(c_label, compute_options, horizontal=True)
+            c_options = ["NVIDIA GPU", "CPU & RAM Core"]
+            if hw.is_apple_silicon: c_options = ["Apple Silicon", "CPU & RAM Core"]
+            compute_target = st.radio("Compute Allocation", c_options, horizontal=True)
             with st.expander("💡 Hardware Helper"):
                 st.info(rec_text)
                 st.caption(f"**Detected:** {hw.cpu_info}")
             
+            # 2. Voice
             v_opt = st.radio("Coach Voice", ["Male", "Female"], horizontal=True)
             st.session_state['selected_voice'] = "en-US-GuyNeural" if v_opt == "Male" else "en-US-AvaNeural"
 
-            provider = st.selectbox("Inference Provider", ["Local (Ollama)", "External API"])
-            if provider == "Local (Ollama)":
+            # 3. Provider (Flattened List)
+            provider = st.selectbox("Inference Provider", ["Ollama (Local)", "OpenAI", "Google Gemini", "Anthropic"])
+            
+            if provider == "Ollama (Local)":
                 models = get_cached_models()
-                selected_model = st.selectbox("Local Model", models)
+                selected_model = st.selectbox("Model", models)
                 with st.expander("⬇️ Download Model"):
                     tag = st.selectbox("Tag", ["llama3.1:8b", "gemma2:9b", "mistral:7b", "-- Other --"])
                     if tag == "-- Other --": tag = st.text_input("Custom Tag")
@@ -157,26 +154,29 @@ def main():
                                 d = json.loads(line.decode('utf-8'))
                                 if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"])
                         st.success("Ready!"); st.cache_data.clear(); st.rerun()
-                api_key, api_target = None, "Ollama"
+                api_key = None
             else:
-                api_target = st.selectbox("API Target", ["OpenAI", "Anthropic", "Google Gemini"])
-                m_map = {
-                    "OpenAI": ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"],
-                    "Anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"],
-                    "Google Gemini": ["gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
-                }
-                m_list = m_map.get(api_target, ["-- Other --"]) + ["-- Other --"]
-                selected_model = st.selectbox("Model", m_list)
+                if provider == "OpenAI": m_list = ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"]
+                elif provider == "Anthropic": m_list = ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"]
+                else: m_list = ["gemini-3.1-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+                
+                selected_model = st.selectbox("Model", m_list + ["-- Other --"])
                 if selected_model == "-- Other --": selected_model = st.text_input("Custom Model")
+                
                 if 'saved_keys' not in st.session_state: st.session_state['saved_keys'] = {}
-                st.caption(f"ℹ️ [Get Key here](https://aistudio.google.com/app/api-keys)")
-                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(api_target, ""), type="password")
-                if api_key: st.session_state['saved_keys'][api_target] = api_key
+                st.caption(f"ℹ️ [Get API Key](https://aistudio.google.com/app/api-keys)")
+                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password")
+                if api_key: st.session_state['saved_keys'][provider] = api_key
 
-            st.session_state['engine_config'] = {"provider": provider if provider == "Local (Ollama)" else api_target, "model": selected_model, "compute": compute_target, "api_key": api_key}
+            # Update Engine Config
+            st.session_state['engine_config'] = {"provider": provider, "model": selected_model, "compute": compute_target, "api_key": api_key}
+
+            # 4. Status (Moved to bottom for instant reactivity)
+            st.divider()
+            unified_status_monitor()
 
             st.divider()
-            if st.button("🔄 Start New Interview", width='stretch'):
+            if st.button("🔄 Start New Interview", use_container_width=True):
                 keep = ['engine_config', 'sys_logged', 'selected_voice', 'saved_keys']
                 for k in list(st.session_state.keys()):
                     if k not in keep: del st.session_state[k]
@@ -190,7 +190,6 @@ def main():
 
         st.title("🎙️ AI Interview Coach")
 
-        # --- AUDIO AUTOPLAY ---
         if st.session_state.get('play_now_bytes'):
             b64 = base64.b64encode(st.session_state['play_now_bytes']).decode()
             n = st.session_state.get('audio_nonce', 0)
@@ -223,22 +222,12 @@ def main():
                     with st.spinner("Structuring..."):
                         p = (f"List 4 unique interview rounds for a {sen} {role} in the {ind} industry. "
                              f"Output ONLY a Python list of strings. Do NOT output anything else.")
-                        # CRITICAL: We do NOT pass resume_context here to prevent round contamination
                         resp = APIClient.generate_response("You are an expert recruiter. Return ONLY a Python list.", p, [], st.session_state['engine_config'])
                         try:
-                            import re
-                            # Clean markdown blocks and extract content between brackets
-                            clean_resp = re.sub(r'```[a-z]*\n?|```', '', resp).strip()
-                            m = re.search(r"\[.*\]", clean_resp, re.DOTALL)
-                            if m:
-                                rounds = ast.literal_eval(m.group())
-                                st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 100]
-                            else:
-                                # Line-by-line fallback
-                                lines = [re.sub(r'^\d+[\.\)]\s*', '', l).strip(' ",\'') for l in resp.split('\n') if len(l.strip()) > 3]
-                                st.session_state['rounds'] = lines[:4]
-                        except:
-                            st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
+                            import re; m = re.search(r"\[.*\]", resp, re.DOTALL)
+                            rounds = ast.literal_eval(m.group()) if m else [resp]
+                            st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
+                        except: st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
                         st.session_state['setup_step'] = 2; st.rerun()
 
                 if st.session_state['setup_step'] >= 2:
@@ -265,15 +254,7 @@ def main():
                     st.session_state['sys_p'] = Personas.get_interview_sys_prompt(st.session_state['selected_persona_label'], st.session_state['selected_round'], st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], st.session_state['resume_text'], st.session_state['job_desc_text'])
                     st.session_state['chat_history'] = []
                     with st.spinner("🎙️ Coach is entering the room..."):
-                        # Generate a dynamic opening based on the system prompt
-                        first_q = APIClient.generate_response(
-                            st.session_state['sys_p'], 
-                            "Start the interview. Greet me and ask ONLY your first question. If my name is in the resume, use it. If not, ask for it.", 
-                            [], 
-                            st.session_state['engine_config'],
-                            resume_context=st.session_state.get('resume_text', ""),
-                            job_context=st.session_state.get('job_desc_text', "")
-                        )
+                        first_q = APIClient.generate_response(st.session_state['sys_p'], "Start the interview. Greet me and ask ONLY your first question.", [], st.session_state['engine_config'], resume_context=st.session_state.get('resume_text', ""), job_context=st.session_state.get('job_desc_text', ""))
                         first_q = clean_llm_text(first_q); trigger_voice(first_q)
                         st.session_state['chat_history'].append({"role": "assistant", "content": first_q}); st.rerun()
 
