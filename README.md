@@ -21,6 +21,7 @@ Preparing for interviews is hard. Standard "practice questions" lists are static
 - **🗣️ Real-Time Voice**: Speak naturally! The system transcribes your words instantly and calculates your **Words Per Minute (WPM)** to help you master your pacing.
 - **🚩 "AI Ears"**: Our system automatically flags filler words like "um", "uh", and "like", helping you sound more eloquent and confident.
 - **📈 STAR Evaluation**: Get professional feedback based on the **Situation, Task, Action, and Result** (STAR) framework at the end of every session.
+- **🧠 Dual-Engine AI**: Seamlessly switch between **Local (Ollama)** for 100% privacy or **Cloud (Gemini/OpenAI/Claude)** for maximum coaching intelligence.
 - **🔒 Local-First Privacy**: Use **Ollama** for 100% offline coaching where your resume and voice never leave your computer.
 
 ---

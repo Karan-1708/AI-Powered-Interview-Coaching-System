@@ -46,7 +46,8 @@ The `verify_internal_key` dependency is injected into every sensitive route. If 
 
 ### 3.3 LLM Orchestration (`LLMClient`)
 **Location**: `src/backend/llm_client.py`
-*   **Providers**: Unified interface for Ollama, OpenAI, Anthropic, and Google Gemini.
+*   **Approach**: Implements a **Dual Inference Approach**, allowing the system to toggle between local and cloud-based "brains" without changing the core interview logic.
+*   **Providers**: Unified interface for Ollama (Local), OpenAI, Anthropic, and Google Gemini (Cloud).
 *   **Reasoning Model Support**: Automatically detects `o1`, `o3`, `o4`, or `gpt-5` series models and swaps `max_tokens` for `max_completion_tokens`.
 *   **System Prompt Injection**: For models that don't support the `system` role (like O-series), it intelligently wraps instructions into the first user message.
 

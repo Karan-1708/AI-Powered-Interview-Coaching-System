@@ -16,11 +16,27 @@ The system is built as a decoupled **Client-Server** application:
 
 ---
 
+## 🧠 Dual Inference Approach
+
+The system provides maximum flexibility by supporting two distinct inference paths for the AI "Brain":
+
+### 1. Local Inference (Privacy First)
+- **Engine**: [Ollama](https://ollama.com/)
+- **Target**: Users who require 100% offline, private coaching.
+- **Implementation**: The `LLMClient` communicates with a local Ollama instance via its REST API. It handles model probing, tag listing, and conversational chat.
+
+### 2. Cloud Frontier (High Performance)
+- **Engine**: REST API (OpenAI, Anthropic, Google Gemini)
+- **Target**: Users seeking state-of-the-art reasoning and coaching quality.
+- **Implementation**: The `LLMClient` features a unified interface that routes requests to the respective cloud provider. It includes automated parameter handling for newer reasoning models (like OpenAI's O-series).
+
+---
+
 ## 🔧 Installation & Setup
 
 ### The Automated Way (Recommended)
 
-Our `**install.py`** script is designed to detect your hardware and configure the environment automatically.
+Our **`install.py`** script is designed to detect your hardware and configure the environment automatically.
 
 1. Open your IDE (VS Code, Cursor, etc.).
 2. Open a terminal and run:
