@@ -182,8 +182,16 @@ def main():
                 selected_model = st.selectbox("Model", m_list + ["-- Other --"])
                 if selected_model == "-- Other --": selected_model = st.text_input("Custom Model")
                 
-                st.caption(f"ℹ️ [Get API Key](https://aistudio.google.com/app/api-keys)")
-                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password")
+                # Dynamic Key Links
+                key_links = {
+                    "OpenAI": "https://platform.openai.com/api-keys",
+                    "Anthropic": "https://platform.claude.com/settings/keys",
+                    "Google Gemini": "https://aistudio.google.com/app/api-keys"
+                }
+                st.caption(f"ℹ️ [Get {provider} Key]({key_links.get(provider, '#')})")
+                
+                # Retrieve from persistent session state
+                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password", key=f"api_key_{w_n}")
                 if api_key != st.session_state['saved_keys'].get(provider):
                     st.session_state['saved_keys'][provider] = api_key
                     FileManager.save_keys(st.session_state['saved_keys'])
