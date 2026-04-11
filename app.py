@@ -44,18 +44,25 @@ def get_cached_models():
     return APIClient.get_local_models()
 
 # --- UI COMPONENTS ---
-@st.fragment(run_every=1)
+@st.fragment(run_every=2)
 def unified_status_monitor(config):
-    """Renders live telemetry and connection indicators."""
+    """Renders live telemetry and connection indicators. Reactive to config changes."""
     hw_status = APIClient.get_hardware_status()
     st.subheader("🔌 Connection Status")
     
     if hw_status:
         st.success("🟢 Backend: Online")
+        
+        # Display Actual Hardware Detected
+        det_hw = hw_status.get("detected_hw", "Standard CPU")
+        st.caption(f"**Physical Hardware:** {det_hw}")
+
         if config:
             success, msg = APIClient.test_connection(config)
-            if success: st.success("🟢 AI Engine: Ready")
-            else: st.error(msg)
+            if success: 
+                st.success("🟢 AI Engine: Ready")
+            else: 
+                st.error(msg)
         
         st.divider()
         st.subheader("🖥️ Resource Usage")
@@ -64,6 +71,18 @@ def unified_status_monitor(config):
         r_u, r_t = stats.get('ram_used_gb', 0), stats.get('ram_total_gb', 0)
         st.progress(min(max(float(c_v) / 100.0, 0.0), 1.0), text=f"CPU: {c_v}%")
         st.progress(min(max(float(r_p) / 100.0, 0.0), 1.0), text=f"RAM: {r_u}/{r_t} GB")
+        
+        # Show what is ACTUALLY being used based on selection and availability
+        current_tier = config.get('compute') if config else "CPU & RAM Core"
+        actual_using = "Standard CPU (Int8)"
+        
+        if current_tier == "NVIDIA GPU" and hw_status.get("has_nvidia"):
+            actual_using = "NVIDIA GPU (FP16)"
+        elif current_tier == "Apple Silicon" and hw_status.get("is_apple_silicon"):
+            actual_using = "Apple Neural Engine (FP32)"
+            
+        st.info(f"**Active Mode:** {actual_using}")
+
         if stats.get("gpu_detected"):
             v_p = stats.get('vram_percent') or 0
             v_u = stats.get('vram_used_gb') or 0

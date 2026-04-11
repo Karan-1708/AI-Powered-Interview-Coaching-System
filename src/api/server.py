@@ -107,10 +107,18 @@ def get_hardware():
     try:
         rec_tier, rec_reason = hw_info.get_recommendation()
         stats = res_monitor.get_system_usage()
+        
+        # Identify the physical hardware detected for the "Actually Using" indicator
+        detected_hw = "Standard CPU"
+        if hw_info.has_nvidia: detected_hw = "NVIDIA GPU"
+        elif hw_info.is_apple_silicon: detected_hw = "Apple Silicon (M-Series)"
+        
         return {
             "tier": rec_tier,
             "reason": rec_reason,
             "has_nvidia": hw_info.has_nvidia,
+            "is_apple_silicon": hw_info.is_apple_silicon,
+            "detected_hw": detected_hw,
             "stats": stats
         }
     except Exception as e:
