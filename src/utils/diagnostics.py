@@ -11,6 +11,14 @@ def setup_environment():
     # Prevent OMP duplication errors
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
     
+    # Programmatically add local 'bin' folder to PATH for portable FFmpeg
+    local_bin = os.path.join(os.getcwd(), "bin")
+    if os.path.exists(local_bin) and local_bin not in os.environ["PATH"]:
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ["PATH"]
+        if hasattr(os, "add_dll_directory"):
+            try: os.add_dll_directory(local_bin)
+            except: pass
+
     if platform.system() == "Windows":
         try:
             import site

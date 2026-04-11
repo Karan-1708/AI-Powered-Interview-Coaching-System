@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 .env
 .venv/
+ai-venv
 env/
 venv/
 build/
@@ -29,6 +30,7 @@ logs/
 
 # Local Models (Ollama models are stored elsewhere, but just in case)
 models/
+bin/
 *.bin
 *.gguf
 
