@@ -44,12 +44,11 @@ def get_cached_models():
     return APIClient.get_local_models()
 
 # --- UI COMPONENTS ---
-@st.fragment(run_every=1) # 1-second heartbeat for "Instant" feel
-def unified_status_monitor(config):
-    """Renders live telemetry and connection indicators."""
+
+@st.fragment(run_every=2)
+def render_resource_usage():
+    """Isolated fragment for high-frequency resource monitoring."""
     hw_status = APIClient.get_hardware_status()
-    
-    # 1. Resource Usage (Top)
     st.subheader("🖥️ Resource Usage")
     if hw_status:
         stats = hw_status.get("stats", {})
@@ -58,35 +57,104 @@ def unified_status_monitor(config):
         st.progress(min(max(float(c_v) / 100.0, 0.0), 1.0), text=f"CPU: {c_v}%")
         st.progress(min(max(float(r_p) / 100.0, 0.0), 1.0), text=f"RAM: {r_u}/{r_t} GB")
         if stats.get("gpu_detected"):
-            v_p = stats.get('vram_percent') or 0
-            v_u = stats.get('vram_used_gb') or 0
-            v_t = stats.get('vram_total_gb') or 0
+            v_p, v_u, v_t = stats.get('vram_percent', 0), stats.get('vram_used_gb', 0), stats.get('vram_total_gb', 0)
             st.progress(min(max(float(v_p) / 100.0, 0.0), 1.0), text=f"GPU VRAM: {v_u}/{v_t} GB")
     else:
         st.error("🔴 Backend: Offline")
 
-    st.divider()
+@st.fragment(run_every=5)
+def render_api_panel(w_n):
+    """Dedicated section for AI Engine selection and live connection status."""
+    st.subheader("🔌 API & Inference")
+    
+    providers = ["Ollama (Local)", "OpenAI", "Google Gemini", "Anthropic"]
+    default_provider = st.session_state.get('default_provider', "Google Gemini")
+    default_idx = providers.index(default_provider)
+    provider = st.selectbox("Inference Provider", providers, index=default_idx, key=f"prov_sel_{w_n}")
+    
+    if provider == "Ollama (Local)":
+        models = get_cached_models()
+        selected_model = st.selectbox("Local Model", models, key=f"model_sel_{w_n}")
+        with st.expander("⬇️ Download Model"):
+            tag = st.selectbox("Tag", ["llama3.1:8b", "gemma2:9b", "mistral:7b", "-- Other --"], key=f"pull_tag_{w_n}")
+            if tag == "-- Other --": tag = st.text_input("Custom Tag", key=f"pull_custom_{w_n}")
+            if st.button("Pull Model", use_container_width=True):
+                p = st.progress(0); res = APIClient.pull_model_stream(tag)
+                for line in res.iter_lines():
+                    if line:
+                        d = json.loads(line.decode('utf-8'))
+                        if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"])
+                st.success("Ready!"); st.cache_data.clear(); st.rerun()
+        api_key = None
+    else:
+        m_map = {"OpenAI": ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"], "Anthropic": ["claude-sonnet-4-6","claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"], "Google Gemini": ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"]}
+        selected_model = st.selectbox("Model", m_map.get(provider, ["-- Other --"]) + ["-- Other --"], key=f"ext_model_{w_n}")
+        if selected_model == "-- Other --": selected_model = st.text_input("Custom Model", key=f"ext_custom_{w_n}")
+        
+        key_links = {"OpenAI": "https://platform.openai.com/api-keys", "Anthropic": "https://platform.claude.com/settings/keys", "Google Gemini": "https://aistudio.google.com/app/api-keys"}
+        st.caption(f"ℹ️ [Get {provider} Key]({key_links.get(provider, '#')})")
 
-    # 2. Connection Status (Middle)
-    st.subheader("🔌 Connection Status")
+        # UNIQUE KEY PER PROVIDER: This ensures fields are isolated and don't mix up keys
+        api_key_key = f"api_key_{provider}_{w_n}"
+        api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password", key=api_key_key)
+
+        if api_key != st.session_state['saved_keys'].get(provider):
+            st.session_state['saved_keys'][provider] = api_key
+            FileManager.save_keys(st.session_state['saved_keys'])
+    # Sync Config
+    compute_target = st.session_state.get(f"comp_target_{w_n}", "CPU & RAM Core")
+    st.session_state['engine_config'] = {"provider": provider, "model": selected_model, "compute": compute_target, "api_key": api_key}
+
+    # Connection Status Badges
+    st.write("")
+    hw_status = APIClient.get_hardware_status()
     if hw_status:
         st.success("🟢 Backend: Online")
-        if config:
-            # Active Mode Calculation
-            current_tier = config.get('compute') if config else "CPU & RAM Core"
-            actual_using = "Standard CPU (Int8)"
-            if current_tier == "NVIDIA GPU" and hw_status.get("has_nvidia"):
-                actual_using = "NVIDIA GPU (FP16)"
-            elif current_tier == "Apple Silicon" and hw_status.get("is_apple_silicon"):
-                actual_using = "Apple Neural Engine (FP32)"
-            st.info(f"**Active Mode:** {actual_using}")
-
-            # Connection Probe
-            success, msg = APIClient.test_connection(config)
-            if success: st.success("🟢 AI Engine: Ready")
-            else: st.error(msg)
+        success, msg = APIClient.test_connection(st.session_state['engine_config'])
+        if success: st.success("🟢 AI Engine: Ready")
+        else: st.error(msg)
     else:
-        st.error("🔴 AI Engine: Backend Offline")
+        st.error("🔴 Backend: Offline")
+
+@st.fragment
+def render_config_panel(w_n):
+    """Isolated fragment for hardware and voice configuration."""
+    st.subheader("⚙️ Configuration")
+    
+    # 1. Hardware Detection & Selection
+    hw = HardwareInfo()
+    rec_mode, rec_text = hw.get_recommendation()
+    
+    # Detect and show physical hardware names
+    hw_status = APIClient.get_hardware_status()
+    det_hw = hw_status.get("detected_hw", "Standard CPU") if hw_status else "Scanning..."
+    
+    c_options = ["NVIDIA GPU", "CPU & RAM Core"]
+    if hw.is_apple_silicon:
+        c_options = ["Apple Silicon", "CPU & RAM Core"]
+    
+    compute_target = st.radio("Compute Allocation", c_options, horizontal=True, key=f"comp_target_{w_n}")
+    
+    # Show ALL detected hardware
+    st.caption(f"**Detected Hardware:** {det_hw}")
+    if hw.has_nvidia and hw.is_apple_silicon: # Rare edge case
+        st.caption("🔍 Multiple accelerators found (NVIDIA + M-Series)")
+    
+    with st.expander("💡 Hardware Helper"):
+        st.info(rec_text)
+
+    # 2. Voice Selection
+    v_opt = st.radio("Coach Voice", ["Male", "Female"], horizontal=True, key=f"v_opt_{w_n}")
+    st.session_state['selected_voice'] = "en-US-GuyNeural" if v_opt == "Male" else "en-US-AvaNeural"
+
+    # 3. Active Mode Logic (Shows real-time backend usage)
+    if hw_status:
+        actual_using = "Standard CPU (Int8)"
+        if compute_target == "NVIDIA GPU" and hw_status.get("has_nvidia"):
+            actual_using = "NVIDIA GPU (FP16)"
+        elif compute_target == "Apple Silicon" and hw_status.get("is_apple_silicon"):
+            actual_using = "Apple Neural Engine (FP32)"
+        st.info(f"**Active Mode:** {actual_using}")
 
 def trigger_voice(text):
     """Fetches audio and sets play state."""
@@ -101,16 +169,26 @@ def trigger_voice(text):
     return False
 
 @st.fragment
-def isolated_recorder_flow(info):
-    """Isolates recorder widget for UI stability."""
+def render_interview_loop(info):
+    """Isolated interview loop for real-time interaction without page flickering."""
+    st.subheader("🎙️ Live Interview Simulator")
+    st.info(f"⏱️ **Stage:** {info['meaning']} | **Interviewer:** {info['persona']}")
+    
+    for idx, msg in enumerate(st.session_state['chat_history']):
+        with st.chat_message(msg["role"], avatar=("🤖" if msg["role"] == "assistant" else "👤")):
+            st.write(msg["content"])
+            if msg["role"] == "assistant":
+                if st.button("🔊 Replay", key=f"replay_{idx}"):
+                    trigger_voice(msg["content"]); st.rerun()
+
     st.divider()
     if 'rec_nonce' not in st.session_state: st.session_state['rec_nonce'] = 0
     audio_path = record_audio(key=f"recorder_{st.session_state['rec_nonce']}")
-    c_sub, c_end = st.columns(2)
     
+    c_sub, c_end = st.columns(2)
     compute_type = st.session_state.get('engine_config', {}).get('compute', 'CPU & RAM Core')
     
-    if audio_path and c_sub.button("🗣️ Submit Answer", type="primary", width='stretch'):
+    if audio_path and c_sub.button("🗣️ Submit Answer", type="primary", use_container_width=True):
         with st.spinner("Processing..."):
             t, m, d, e = APIClient.process_audio(audio_path, info['recommended_mode'], compute_type)
             if not e:
@@ -123,24 +201,81 @@ def isolated_recorder_flow(info):
                     st.session_state['rec_nonce'] += 1
                     st.rerun()
 
-    if c_end.button("🛑 End Interview & Analyze", width='stretch'):
+    if c_end.button("🛑 End Interview & Analyze", use_container_width=True):
         if audio_path:
             with st.spinner("Finalizing..."):
                 t, m, d, e = APIClient.process_audio(audio_path, info['recommended_mode'], compute_type)
                 if not e:
                     st.session_state['aggregated_metrics'].append({"transcript": t, "metrics": m, "duration": d})
                     st.session_state['chat_history'].append({"role": "user", "content": t})
-        st.session_state['interview_complete'] = True
-        st.rerun()
+        st.session_state['interview_complete'] = True; st.rerun()
+
+@st.fragment
+def render_setup_wizard(w_n):
+    """Isolated setup wizard for role definition and document processing."""
+    with st.expander("🛠️ Interview Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
+        st.markdown("### 1. Define Target Role")
+        c1, c2, c3 = st.columns(3)
+        ind = c1.text_input("Industry", placeholder="e.g., Tech", key=f"ind_in_{w_n}")
+        role = c2.text_input("Job Title", placeholder="e.g., Backend Developer", key=f"role_in_{w_n}")
+        sen = c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"], key=f"sen_in_{w_n}")
+        
+        st.divider()
+        st.markdown("### 2. Contextual Data (Optional)")
+        c_res, c_jd = st.columns(2)
+        res_f = c_res.file_uploader("Upload Resume", type=["pdf", "txt", "docx"], key=f"res_up_{w_n}")
+        jd_f = c_jd.file_uploader("Upload Job Description", type=["pdf", "txt", "docx"], key=f"jd_up_{w_n}")
+        
+        if res_f:
+            res_text = parse_file(res_f)
+            if res_text: st.session_state['resume_text'] = res_text
+            else: st.sidebar.warning(f"⚠️ Could not read resume: {res_f.name}"); st.session_state['resume_text'] = None
+        else: st.session_state['resume_text'] = ""
+
+        if jd_f:
+            jd_text = parse_file(jd_f)
+            if jd_text: st.session_state['job_desc_text'] = jd_text
+            else: st.sidebar.warning(f"⚠️ Could not read job description: {jd_f.name}"); st.session_state['job_desc_text'] = None
+        else: st.session_state['job_desc_text'] = ""
+
+        if st.button("Generate Interview Rounds", disabled=not (ind and role), use_container_width=True):
+            hw_status = APIClient.get_hardware_status()
+            if not hw_status: st.error("🔴 Backend Offline")
+            else:
+                success, msg = APIClient.test_connection(st.session_state['engine_config'])
+                if not success: st.error(f"❌ Connection Error: {msg}")
+                else:
+                    with st.spinner("Structuring..."):
+                        p = (f"List 4 unique interview rounds for a {sen} {role} in the {ind} industry. Output ONLY a Python list of strings.")
+                        resp = APIClient.generate_response("Expert recruiter. Return ONLY a Python list.", p, [], st.session_state['engine_config'])
+                        try:
+                            import re; m = re.search(r"\[.*\]", resp, re.DOTALL)
+                            rounds = ast.literal_eval(m.group()) if m else [resp]
+                            st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
+                        except: st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
+                        st.session_state['setup_step'] = 2; st.rerun()
+
+        if st.session_state['setup_step'] >= 2:
+            st.divider()
+            st.markdown("### 3. Select Stage & Persona")
+            sel_r = st.selectbox("Target Interview Round:", st.session_state['rounds'], key=f"round_sel_{w_n}")
+            sel_p = st.selectbox("Interviewer Style:", list(Personas.PERSONA_PROMPTS.keys()), key=f"persona_sel_{w_n}")
+            if st.button("Start Interview Simulation", type="primary", use_container_width=True):
+                if not sel_r: st.error("Please generate interview rounds in Step 1 first!")
+                else:
+                    with st.spinner("Writing questions..."):
+                        st.session_state.update({'selected_persona_label': sel_p, 'selected_round': sel_r, 'seniority': sen, 'job_title': role, 'industry': ind})
+                        persona_cfg = Personas.get_interviewer_by_type(sel_r.split(" ")[0], sen)
+                        st.session_state['round_info'] = {"meaning": persona_cfg['meaning'], "persona": persona_cfg['persona'], "recommended_mode": "Balanced"}
+                        q_resp = APIClient.generate_questions(sen, role, ind, sel_r, st.session_state['engine_config'], st.session_state['resume_text'], st.session_state['job_desc_text'])
+                        raw_qs = [q.strip() for q in q_resp.split('\n') if len(q.strip()) > 10]
+                        st.session_state['custom_questions'] = [clean_llm_text(q) for q in raw_qs]
+                        st.session_state['setup_step'] = 3; st.rerun()
 
 # --- MAIN APP ---
-st.set_page_config(page_title="AI Interview Coach", page_icon="assets/Data-Drifters.png", layout="wide")
-
 def main():
     try:
-        # --- 1. GLOBAL INITIALIZATION ---
-        if 'wipe_nonce' not in st.session_state:
-            st.session_state['wipe_nonce'] = 0
+        if 'wipe_nonce' not in st.session_state: st.session_state['wipe_nonce'] = 0
         w_n = st.session_state['wipe_nonce']
 
         if 'default_provider' not in st.session_state:
@@ -157,69 +292,24 @@ def main():
         with st.sidebar:
             st.image("assets/Data-Drifters.png", width="stretch")
             
-            # --- 1. LIVE MONITORING (Top) ---
-            # Using 1s heartbeat to ensure it picks up config changes instantly
-            unified_status_monitor(st.session_state.get('engine_config'))
-            
+            # 1. Resource Usage (Top)
+            render_resource_usage()
             st.divider()
             
-            # --- 2. CONFIGURATION (Bottom) ---
-            st.header("⚙️ Configuration")
+            # 2. API & Inference (Middle)
+            render_api_panel(w_n)
+            st.divider()
             
-            hw = HardwareInfo()
-            rec_mode, rec_text = hw.get_recommendation()
-            c_options = ["NVIDIA GPU", "CPU & RAM Core"]
-            if hw.is_apple_silicon: c_options = ["Apple Silicon", "CPU & RAM Core"]
-            compute_target = st.radio("Compute Allocation", c_options, horizontal=True, key=f"comp_target_{w_n}")
-            st.caption(f"**Physical Hardware:** {hw.cpu_info}")
-            with st.expander("💡 Hardware Helper"):
-                st.info(rec_text)
+            # 3. Configuration (Bottom - Now a Fragment)
+            render_config_panel(w_n)
             
-            v_opt = st.radio("Coach Voice", ["Male", "Female"], horizontal=True, key=f"v_opt_{w_n}")
-            st.session_state['selected_voice'] = "en-US-GuyNeural" if v_opt == "Male" else "en-US-AvaNeural"
-
-            providers = ["Ollama (Local)", "OpenAI", "Google Gemini", "Anthropic"]
-            default_idx = providers.index(st.session_state.get('default_provider', "Google Gemini"))
-            provider = st.selectbox("Inference Provider", providers, index=default_idx, key=f"prov_sel_{w_n}")
-            
-            if provider == "Ollama (Local)":
-                models = get_cached_models()
-                selected_model = st.selectbox("Local Model", models, key=f"model_sel_{w_n}")
-                with st.expander("⬇️ Download Model"):
-                    tag = st.selectbox("Tag", ["llama3.1:8b", "gemma2:9b", "mistral:7b", "-- Other --"], key=f"pull_tag_{w_n}")
-                    if tag == "-- Other --": tag = st.text_input("Custom Tag", key=f"pull_custom_{w_n}")
-                    if st.button("Pull Model", use_container_width=True):
-                        p = st.progress(0, "Starting..."); res = APIClient.pull_model_stream(tag)
-                        for line in res.iter_lines():
-                            if line:
-                                d = json.loads(line.decode('utf-8'))
-                                if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"], f"Downloading...")
-                        st.success("Ready!"); st.cache_data.clear(); st.rerun()
-                api_key = None
-            else:
-                m_map = {"OpenAI": ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"], "Anthropic": ["claude-sonnet-4-6","claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"], "Google Gemini": ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"]}
-                selected_model = st.selectbox("Model", m_map.get(provider, ["-- Other --"]) + ["-- Other --"], key=f"ext_model_{w_n}")
-                if selected_model == "-- Other --": selected_model = st.text_input("Custom Model", key=f"ext_custom_{w_n}")
-                
-                key_links = {"OpenAI": "https://platform.openai.com/api-keys", "Anthropic": "https://platform.claude.com/settings/keys", "Google Gemini": "https://aistudio.google.com/app/api-keys"}
-                st.caption(f"ℹ️ [Get {provider} Key]({key_links.get(provider, '#')})")
-                
-                api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password", key=f"api_key_{w_n}")
-                if api_key != st.session_state['saved_keys'].get(provider):
-                    st.session_state['saved_keys'][provider] = api_key
-                    FileManager.save_keys(st.session_state['saved_keys'])
-
-            # Final Session State Sync
-            st.session_state['engine_config'] = {"provider": provider, "model": selected_model, "compute": compute_target, "api_key": api_key}
-
             st.divider()
             if st.button("🔄 Start New Interview", use_container_width=True):
                 new_nonce = st.session_state.get('wipe_nonce', 0) + 1
                 keep = ['engine_config', 'sys_logged', 'selected_voice', 'saved_keys', 'default_provider']
                 for k in list(st.session_state.keys()):
                     if k not in keep: del st.session_state[k]
-                st.session_state['wipe_nonce'] = new_nonce
-                st.rerun()
+                st.session_state['wipe_nonce'] = new_nonce; st.rerun()
 
             with st.expander("🗑️ Danger Zone"):
                 if st.button("Delete All Data", type="primary", use_container_width=True):
@@ -227,8 +317,7 @@ def main():
                     FileManager.safe_delete_file(os.path.join(FileManager.TEMP_DIR, "vault.json"))
                     new_nonce = st.session_state.get('wipe_nonce', 0) + 1
                     for k in list(st.session_state.keys()): del st.session_state[k]
-                    st.session_state['wipe_nonce'] = new_nonce
-                    st.rerun()
+                    st.session_state['wipe_nonce'] = new_nonce; st.rerun()
 
         st.title("🎙️ AI Interview Coach")
 
@@ -244,73 +333,14 @@ def main():
             if 'setup_step' not in st.session_state: st.session_state['setup_step'] = 1
             if 'rounds' not in st.session_state: st.session_state['rounds'] = []
             if 'aggregated_metrics' not in st.session_state: st.session_state['aggregated_metrics'] = []
-            if 'wipe_nonce' not in st.session_state: st.session_state['wipe_nonce'] = 0
             
-            w_n = st.session_state['wipe_nonce']
-
-            with st.expander("🛠️ Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
-                st.markdown("### 1. Define Target Role")
-                c1, c2, c3 = st.columns(3)
-                ind = c1.text_input("Industry", placeholder="e.g., Tech", key=f"ind_in_{w_n}")
-                role = c2.text_input("Job Title", placeholder="e.g., Backend Developer", key=f"role_in_{w_n}")
-                sen = c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"], key=f"sen_in_{w_n}")
-                
-                st.divider()
-                st.markdown("### 2. Contextual Data (Optional)")
-                c_res, c_jd = st.columns(2)
-                res_f = c_res.file_uploader("Upload Resume", type=["pdf", "txt", "docx"], key=f"res_up_{w_n}")
-                jd_f = c_jd.file_uploader("Upload Job Description", type=["pdf", "txt", "docx"], key=f"jd_up_{w_n}")
-                
-                if res_f:
-                    res_text = parse_file(res_f)
-                    if res_text: st.session_state['resume_text'] = res_text
-                    else: st.sidebar.warning(f"⚠️ Could not read resume: {res_f.name}"); st.session_state['resume_text'] = None
-                else: st.session_state['resume_text'] = ""
-
-                if jd_f:
-                    jd_text = parse_file(jd_f)
-                    if jd_text: st.session_state['job_desc_text'] = jd_text
-                    else: st.sidebar.warning(f"⚠️ Could not read job description: {jd_f.name}"); st.session_state['job_desc_text'] = None
-                else: st.session_state['job_desc_text'] = ""
-
-                if st.button("Generate Interview Rounds", disabled=not (ind and role)):
-                    hw_status = APIClient.get_hardware_status()
-                    if not hw_status: st.error("🔴 Backend Offline")
-                    else:
-                        success, msg = APIClient.test_connection(st.session_state['engine_config'])
-                        if not success: st.error(f"❌ Connection Error: {msg}")
-                        else:
-                            with st.spinner("Structuring..."):
-                                p = (f"List 4 unique interview rounds for a {sen} {role} in the {ind} industry. "
-                                     f"Output ONLY a Python list of strings. Do NOT output anything else.")
-                                resp = APIClient.generate_response("Return ONLY a Python list.", p, [], st.session_state['engine_config'])
-                                try:
-                                    import re; m = re.search(r"\[.*\]", resp, re.DOTALL)
-                                    rounds = ast.literal_eval(m.group()) if m else [resp]
-                                    st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
-                                except: st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
-                                st.session_state['setup_step'] = 2; st.rerun()
-
-                if st.session_state['setup_step'] >= 2:
-                    st.divider()
-                    st.markdown("### 3. Select Stage & Persona")
-                    sel_r = st.selectbox("Target Interview Round:", st.session_state['rounds'], key=f"round_sel_{w_n}")
-                    sel_p = st.selectbox("Interviewer Style:", list(Personas.PERSONA_PROMPTS.keys()), key=f"persona_sel_{w_n}")
-                    if st.button("Generate Questions", type="primary"):
-                        if not sel_r: st.error("Please generate interview rounds in Step 1 first!")
-                        else:
-                            with st.spinner("Writing..."):
-                                st.session_state.update({'selected_persona_label': sel_p, 'selected_round': sel_r, 'seniority': sen, 'job_title': role, 'industry': ind})
-                                persona_cfg = Personas.get_interviewer_by_type(sel_r.split(" ")[0], sen)
-                                st.session_state['round_info'] = {"meaning": persona_cfg['meaning'], "persona": persona_cfg['persona'], "recommended_mode": "Balanced"}
-                                q_resp = APIClient.generate_questions(sen, role, ind, sel_r, st.session_state['engine_config'], st.session_state['resume_text'], st.session_state['job_desc_text'])
-                                raw_qs = [q.strip() for q in q_resp.split('\n') if len(q.strip()) > 10]
-                                st.session_state['custom_questions'] = [clean_llm_text(q) for q in raw_qs]
-                                st.session_state['setup_step'] = 3; st.rerun()
+            if st.session_state['setup_step'] < 3: render_setup_wizard(w_n)
 
             if st.session_state['setup_step'] == 3 and not st.session_state.get('interview_complete'):
-                st.subheader("🎙️ Interview Simulator")
-                info = st.session_state['round_info']; st.info(f"⏱️ **Stage:** {info['meaning']} | **Interviewer:** {info['persona']}")
+                # (Logic handled in fragments)
+                pass
+
+            if st.session_state['setup_step'] == 3 and not st.session_state.get('interview_complete'):
                 if 'chat_history' not in st.session_state:
                     st.session_state['sys_p'] = Personas.get_interview_sys_prompt(st.session_state['selected_persona_label'], st.session_state['selected_round'], st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], st.session_state['resume_text'], st.session_state['job_desc_text'])
                     st.session_state['chat_history'] = []
@@ -318,13 +348,7 @@ def main():
                         first_q = APIClient.generate_response(st.session_state['sys_p'], "Start the interview. Greet me and ask ONLY your first question.", [], st.session_state['engine_config'], resume_context=st.session_state.get('resume_text', ""), job_context=st.session_state.get('job_desc_text', ""))
                         first_q = clean_llm_text(first_q); trigger_voice(first_q)
                         st.session_state['chat_history'].append({"role": "assistant", "content": first_q}); st.rerun()
-
-                for idx, msg in enumerate(st.session_state['chat_history']):
-                    with st.chat_message(msg["role"], avatar=("🤖" if msg["role"] == "assistant" else "👤")):
-                        st.write(msg["content"])
-                        if msg["role"] == "assistant":
-                            if st.button("🔊 Replay", key=f"replay_{idx}"): trigger_voice(msg["content"]); st.rerun()
-                isolated_recorder_flow(info)
+                render_interview_loop(st.session_state['round_info'])
 
             if st.session_state.get('interview_complete'):
                 if 'final_feedback' not in st.session_state:
@@ -339,8 +363,7 @@ def main():
                         st.session_state.update({'final_feedback': f_f, 'full_transcript': full_t, 'avg_wpm': avg_w, 'total_fillers': t_f, 'total_duration': t_d})
                 render_final_analysis(st.session_state)
 
-        with tab_history:
-            render_history_dashboard()
+        with tab_history: render_history_dashboard()
 
     except Exception as e:
         st.error(f"🚨 Error: {e}"); st.code(traceback.format_exc())
