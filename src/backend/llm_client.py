@@ -199,10 +199,10 @@ class LLMClient:
         }
         
         if is_reasoning_model:
-            payload["max_completion_tokens"] = 1000
+            payload["max_completion_tokens"] = 8000 # Increased for full feedback
             # Temperature is not supported or must be 1.0 for many reasoning models
         else:
-            payload["max_tokens"] = 800
+            payload["max_tokens"] = 6000
             payload["temperature"] = 0.7
         
         response = requests.post(url, headers=headers, json=payload, timeout=30)

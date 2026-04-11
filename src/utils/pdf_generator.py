@@ -37,30 +37,33 @@ class PDFGenerator:
         """
         try:
             # 1. Clean and Sanitize Input
-            # Ensure the feedback starts on a fresh line for the markdown parser
-            final_feedback = "\n" + str(final_feedback).strip()
+            final_feedback = str(final_feedback).strip()
+            full_transcript = str(full_transcript).strip()
             
             # Standardize Unicode for Latin-1 compatibility
             final_feedback = PDFGenerator.clean_unicode(final_feedback)
             full_transcript = PDFGenerator.clean_unicode(full_transcript)
 
             # 2. Convert LLM Markdown to HTML
-            # Using 'extra' extension for better compatibility
-            feedback_html = markdown.markdown(final_feedback, extensions=['extra'])
+            feedback_html = markdown.markdown(final_feedback, extensions=['extra']).strip()
             feedback_html = feedback_html.replace("<strong>", "<b>").replace("</strong>", "</b>")
             feedback_html = feedback_html.replace("<h3>", '<h3 style="color: #2980b9;">').replace("<h2>", '<h2 style="color: #2c3e50;">')
 
-            pdf = FPDF()
+            # Initialize PDF with a custom footer
+            class PDF(FPDF):
+                def footer(self):
+                    # Position at 1.5 cm from bottom
+                    self.set_y(-15)
+                    self.set_font("helvetica", "I", 8)
+                    self.set_text_color(150, 150, 150)
+                    # Page number
+                    self.cell(0, 10, f"Built with Data Drifters AI Coaching System - Page {self.page_no()}", align="C")
+
+            pdf = PDF()
+            pdf.set_auto_page_break(auto=True, margin=20)
             pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=15)
             
             # --- HEADER ---
-            logo_path = os.path.join("assets", "logo.png")
-            if os.path.exists(logo_path):
-                try:
-                    pdf.image(logo_path, 10, 8, 25)
-                except Exception: pass
-
             pdf.set_font("helvetica", "B", 22)
             pdf.set_text_color(41, 128, 185) # Professional Blue
             pdf.cell(0, 15, "AI Interview Coaching Report", ln=True, align="C")
@@ -78,7 +81,6 @@ class PDFGenerator:
             
             pdf.set_font("helvetica", "", 11)
             pdf.set_text_color(0, 0, 0)
-            # Reset X to margin to prevent "Not enough horizontal space" errors
             pdf.set_x(pdf.l_margin)
             metrics_summary = f"""
             <ul>
@@ -99,7 +101,6 @@ class PDFGenerator:
             pdf.set_font("helvetica", "", 11)
             pdf.set_x(pdf.l_margin)
             pdf.write_html(feedback_html)
-            pdf.ln(10)
             
             # --- TRANSCRIPT SECTION ---
             # Start transcript on a new page for clarity
@@ -111,14 +112,7 @@ class PDFGenerator:
             
             pdf.set_font("helvetica", "", 10)
             pdf.set_x(pdf.l_margin)
-            # app.py already provides <b> and <br> tags in full_transcript
             pdf.write_html(f'<div style="font-size: 10pt; line-height: 1.5;">{full_transcript}</div>')
-            
-            # --- FOOTER ---
-            pdf.set_y(-15)
-            pdf.set_font("helvetica", "I", 8)
-            pdf.set_text_color(150, 150, 150)
-            pdf.cell(0, 10, "Built with Data Drifters AI Coaching System", align="C")
 
             # 3. Final Save
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
