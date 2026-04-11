@@ -161,6 +161,9 @@ class APIClient:
             if response.status_code == 200:
                 return response.content
             
+            if response.status_code == 500:
+                return "TTS_FAILED"
+                
             logger.error(f"TTS API Error {response.status_code}: {response.text}")
             return None
         except Exception as e:

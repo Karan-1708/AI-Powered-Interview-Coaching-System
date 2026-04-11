@@ -242,28 +242,47 @@ def pull_model(request: dict):
 @app.post("/generate-speech", dependencies=[Depends(verify_internal_key)], tags=["TTS"])
 async def generate_speech(request: SpeechRequest):
     """
-    Generates an MP3 file from text using edge-tts.
+    Generates an MP3 file from text using edge-tts with safety limits.
     """
-    logger.info(f"Generating speech for text: {request.text[:50]}...")
+    # 1. Text Length Limiter (1500 characters)
+    max_chars = 1500
+    safe_text = request.text.strip()
+    
+    if len(safe_text) > max_chars:
+        logger.warning(f"TTS input too long ({len(safe_text)} chars). Truncating...")
+        # Truncate at nearest sentence boundary (. ! ?)
+        truncated = safe_text[:max_chars]
+        last_boundary = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+        if last_boundary > max_chars // 2: # Ensure we don't truncate too much
+            safe_text = truncated[:last_boundary + 1] + " ..."
+        else:
+            safe_text = truncated + " ..."
+
+    # 2. Voice Validation
+    target_voice = request.voice if request.voice and str(request.voice).startswith("en-") else "en-US-GuyNeural"
+    
+    logger.info(f"Generating speech ({target_voice}) for text: {safe_text[:50]}...")
     FileManager.initialize_directories()
     temp_filename = f"tts_{int(time.time())}.mp3"
     temp_path = os.path.join(FileManager.TEMP_DIR, temp_filename)
     
     try:
-        communicate = edge_tts.Communicate(request.text, request.voice)
+        # 3. Robust Engine Execution
+        communicate = edge_tts.Communicate(safe_text, target_voice)
         await communicate.save(temp_path)
         
-        if not os.path.exists(temp_path):
-            raise HTTPException(status_code=500, detail="Failed to generate audio file.")
+        if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+            raise Exception("Edge-TTS generated an empty or missing file.")
             
-        return FileResponse(
-            temp_path, 
-            media_type="audio/mpeg", 
-            filename=temp_filename
-        )
+        return FileResponse(temp_path, media_type="audio/mpeg", filename=temp_filename)
+        
     except Exception as e:
-        logger.error(f"TTS Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"TTS Engine Failure: {str(e)}", exc_info=True)
+        # Clean up failed file if it exists
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except: pass
+        raise HTTPException(status_code=500, detail="Voice engine encountered an internal error.")
 
 if __name__ == "__main__":
     import uvicorn

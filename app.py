@@ -7,6 +7,11 @@ import time
 import traceback
 import base64
 import re
+import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- PATH INJECTION ---
 root_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,32 +44,31 @@ def get_cached_models():
     return APIClient.get_local_models()
 
 # --- UI COMPONENTS ---
-@st.fragment(run_every=3)
-def unified_status_monitor():
-    """Renders live telemetry. No caching here to ensure instant updates upon config change."""
+@st.fragment(run_every=1)
+def unified_status_monitor(config):
+    """Renders live telemetry and connection indicators."""
     hw_status = APIClient.get_hardware_status()
     st.subheader("🔌 Connection Status")
     
     if hw_status:
         st.success("🟢 Backend: Online")
-        if 'engine_config' in st.session_state:
-            # Instant probe (no cache) ensures the badge changes immediately when you edit keys/providers
-            success, msg = APIClient.test_connection(st.session_state['engine_config'])
+        if config:
+            success, msg = APIClient.test_connection(config)
             if success: st.success("🟢 AI Engine: Ready")
-            else: st.error(f"🔴 AI Engine: {msg.split('.')[0]}")
+            else: st.error(msg)
         
         st.divider()
         st.subheader("🖥️ Resource Usage")
         stats = hw_status.get("stats", {})
         c_v, r_p = stats.get('cpu_percent', 0), stats.get('ram_percent', 0)
         r_u, r_t = stats.get('ram_used_gb', 0), stats.get('ram_total_gb', 0)
-        st.progress(min(max(float(c_v) / 100.0, 0.0), 1.0), text=f"API CPU: {c_v}%")
-        st.progress(min(max(float(r_p) / 100.0, 0.0), 1.0), text=f"API RAM: {r_u}/{r_t} GB")
+        st.progress(min(max(float(c_v) / 100.0, 0.0), 1.0), text=f"CPU: {c_v}%")
+        st.progress(min(max(float(r_p) / 100.0, 0.0), 1.0), text=f"RAM: {r_u}/{r_t} GB")
         if stats.get("gpu_detected"):
             v_p = stats.get('vram_percent') or 0
             v_u = stats.get('vram_used_gb') or 0
             v_t = stats.get('vram_total_gb') or 0
-            st.progress(min(max(float(v_p) / 100.0, 0.0), 1.0), text=f"API VRAM: {v_u}/{v_t} GB")
+            st.progress(min(max(float(v_p) / 100.0, 0.0), 1.0), text=f"GPU VRAM: {v_u}/{v_t} GB")
     else:
         st.error("🔴 Backend: Offline")
 
@@ -118,6 +122,18 @@ st.set_page_config(page_title="AI Interview Coach", page_icon="assets/Data-Drift
 
 def main():
     try:
+        # --- STARTUP AUTO-DETECTION ---
+        if 'default_provider' not in st.session_state:
+            try:
+                res = requests.get("http://127.0.0.1:11434/api/tags", timeout=1)
+                if res.status_code == 200: st.session_state['default_provider'] = "Ollama (Local)"
+                else: st.session_state['default_provider'] = "Google Gemini"
+            except: st.session_state['default_provider'] = "Google Gemini"
+
+        # --- PERSISTENT KEY LOADING ---
+        if 'saved_keys' not in st.session_state:
+            st.session_state['saved_keys'] = FileManager.load_saved_keys()
+
         # --- SIDEBAR ---
         with st.sidebar:
             st.image("assets/Data-Drifters.png", width="stretch")
@@ -138,54 +154,70 @@ def main():
             v_opt = st.radio("Coach Voice", ["Male", "Female"], horizontal=True)
             st.session_state['selected_voice'] = "en-US-GuyNeural" if v_opt == "Male" else "en-US-AvaNeural"
 
-            # 3. Provider (Flattened List)
-            provider = st.selectbox("Inference Provider", ["Ollama (Local)", "OpenAI", "Google Gemini", "Anthropic"])
+            # 3. Provider
+            providers = ["Ollama (Local)", "OpenAI", "Google Gemini", "Anthropic"]
+            default_idx = providers.index(st.session_state.get('default_provider', "Google Gemini"))
+            provider = st.selectbox("Inference Provider", providers, index=default_idx)
             
             if provider == "Ollama (Local)":
                 models = get_cached_models()
-                selected_model = st.selectbox("Model", models)
+                selected_model = st.selectbox("Local Model", models)
                 with st.expander("⬇️ Download Model"):
                     tag = st.selectbox("Tag", ["llama3.1:8b", "gemma2:9b", "mistral:7b", "-- Other --"])
                     if tag == "-- Other --": tag = st.text_input("Custom Tag")
-                    if st.button("Pull"):
-                        p = st.progress(0); res = APIClient.pull_model_stream(tag)
+                    if st.button("Pull Model", use_container_width=True):
+                        p = st.progress(0, "Starting...")
+                        res = APIClient.pull_model_stream(tag)
                         for line in res.iter_lines():
                             if line:
                                 d = json.loads(line.decode('utf-8'))
-                                if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"])
+                                if "completed" in d and "total" in d and d["total"] > 0: p.progress(d["completed"]/d["total"], f"Downloading {tag}...")
                         st.success("Ready!"); st.cache_data.clear(); st.rerun()
                 api_key = None
             else:
                 if provider == "OpenAI": m_list = ["gpt-5.4-nano", "gpt-5-nano", "o4-mini", "gpt-4o-mini"]
-                elif provider == "Anthropic": m_list = ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"]
-                else: m_list = ["gemini-3.1-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+                elif provider == "Anthropic": m_list = ["claude-sonnet-4-6","claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-0"]
+                else: m_list = ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"]
                 
                 selected_model = st.selectbox("Model", m_list + ["-- Other --"])
                 if selected_model == "-- Other --": selected_model = st.text_input("Custom Model")
                 
-                if 'saved_keys' not in st.session_state: st.session_state['saved_keys'] = {}
                 st.caption(f"ℹ️ [Get API Key](https://aistudio.google.com/app/api-keys)")
                 api_key = st.text_input("Secret API Key", value=st.session_state['saved_keys'].get(provider, ""), type="password")
-                if api_key: st.session_state['saved_keys'][provider] = api_key
+                if api_key != st.session_state['saved_keys'].get(provider):
+                    st.session_state['saved_keys'][provider] = api_key
+                    FileManager.save_keys(st.session_state['saved_keys'])
 
-            # Update Engine Config
+            # --- ENGINE CONFIG ---
             st.session_state['engine_config'] = {"provider": provider, "model": selected_model, "compute": compute_target, "api_key": api_key}
 
-            # 4. Status (Moved to bottom for instant reactivity)
+            # --- 4. STATUS (REACTIVE) ---
             st.divider()
-            unified_status_monitor()
+            unified_status_monitor(st.session_state['engine_config'])
 
             st.divider()
             if st.button("🔄 Start New Interview", use_container_width=True):
-                keep = ['engine_config', 'sys_logged', 'selected_voice', 'saved_keys']
+                keep = ['engine_config', 'sys_logged', 'selected_voice', 'saved_keys', 'default_provider', 'wipe_nonce']
+                # Increment wipe_nonce to force-reset input fields
+                st.session_state['wipe_nonce'] = st.session_state.get('wipe_nonce', 0) + 1
                 for k in list(st.session_state.keys()):
                     if k not in keep: del st.session_state[k]
                 st.rerun()
 
             with st.expander("🗑️ Danger Zone"):
-                if st.button("Delete All Data", type="primary"):
+                if st.button("Delete All Data", type="primary", use_container_width=True):
+                    # 1. Clear local files
                     FileManager.cleanup_all_data(); HistoryManager.clear_history()
-                    if 'saved_keys' in st.session_state: del st.session_state['saved_keys']
+                    FileManager.safe_delete_file(os.path.join(FileManager.TEMP_DIR, "vault.json"))
+                    
+                    # 2. Increment reset counter
+                    new_nonce = st.session_state.get('wipe_nonce', 0) + 1
+                    
+                    # 3. Wipe everything EXCEPT the reset counter
+                    for k in list(st.session_state.keys()): 
+                        del st.session_state[k]
+                    
+                    st.session_state['wipe_nonce'] = new_nonce
                     st.rerun()
 
         st.title("🎙️ AI Interview Coach")
@@ -202,21 +234,47 @@ def main():
             if 'setup_step' not in st.session_state: st.session_state['setup_step'] = 1
             if 'rounds' not in st.session_state: st.session_state['rounds'] = []
             if 'aggregated_metrics' not in st.session_state: st.session_state['aggregated_metrics'] = []
+            if 'wipe_nonce' not in st.session_state: st.session_state['wipe_nonce'] = 0
             
+            w_n = st.session_state['wipe_nonce']
+
             with st.expander("🛠️ Setup Wizard", expanded=(st.session_state['setup_step'] < 3)):
                 st.markdown("### 1. Define Target Role")
                 c1, c2, c3 = st.columns(3)
-                ind = c1.text_input("Industry", placeholder="e.g., Tech")
-                role = c2.text_input("Job Title", placeholder="e.g., Backend Developer")
-                sen = c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"])
+                # Adding keys to widgets allows us to clear them via session_state deletion
+                ind = c1.text_input("Industry", placeholder="e.g., Tech", key=f"ind_in_{w_n}")
+                role = c2.text_input("Job Title", placeholder="e.g., Backend Developer", key=f"role_in_{w_n}")
+                sen = c3.selectbox("Seniority", ["Entry-Level", "Mid-Level", "Senior / Lead", "Executive"], key=f"sen_in_{w_n}")
                 
                 st.divider()
                 st.markdown("### 2. Contextual Data (Optional)")
                 c_res, c_jd = st.columns(2)
-                res_f = c_res.file_uploader("Upload Resume", type=["pdf", "txt"])
-                jd_f = c_jd.file_uploader("Upload Job Description", type=["pdf", "txt"])
-                st.session_state['resume_text'] = parse_file(res_f) if res_f else ""
-                st.session_state['job_desc_text'] = parse_file(jd_f) if jd_f else ""
+                res_f = c_res.file_uploader("Upload Resume", type=["pdf", "txt", "docx"], key=f"res_up_{w_n}")
+                jd_f = c_jd.file_uploader("Upload Job Description", type=["pdf", "txt", "docx"], key=f"jd_up_{w_n}")
+                
+                ALLOWED_EXT = [".pdf", ".txt", ".docx"]
+                MAX_SIZE_MB = 200
+                
+                # Use standard logic but check widget keys
+                if res_f:
+                    if res_f.size > MAX_SIZE_MB * 1024 * 1024:
+                        st.error(f"❌ File too large: {res_f.name}")
+                        st.session_state['resume_text'] = ""
+                    else:
+                        res_text = parse_file(res_f)
+                        if res_text: st.session_state['resume_text'] = res_text
+                        else: st.session_state['resume_text'] = None
+                else: st.session_state['resume_text'] = ""
+
+                if jd_f:
+                    if jd_f.size > MAX_SIZE_MB * 1024 * 1024:
+                        st.error(f"❌ File too large: {jd_f.name}")
+                        st.session_state['job_desc_text'] = ""
+                    else:
+                        jd_text = parse_file(jd_f)
+                        if jd_text: st.session_state['job_desc_text'] = jd_text
+                        else: st.session_state['job_desc_text'] = None
+                else: st.session_state['job_desc_text'] = ""
 
                 if st.button("Generate Interview Rounds", disabled=not (ind and role)):
                     with st.spinner("Structuring..."):
@@ -233,8 +291,8 @@ def main():
                 if st.session_state['setup_step'] >= 2:
                     st.divider()
                     st.markdown("### 3. Select Stage & Persona")
-                    sel_r = st.selectbox("Target Interview Round:", st.session_state['rounds'])
-                    sel_p = st.selectbox("Interviewer Style:", list(Personas.PERSONA_PROMPTS.keys()))
+                    sel_r = st.selectbox("Target Interview Round:", st.session_state['rounds'], key=f"round_sel_{w_n}")
+                    sel_p = st.selectbox("Interviewer Style:", list(Personas.PERSONA_PROMPTS.keys()), key=f"persona_sel_{w_n}")
                     if st.button("Generate Questions", type="primary"):
                         if not sel_r: st.error("Please generate interview rounds in Step 1 first!")
                         else:

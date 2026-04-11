@@ -41,34 +41,40 @@ class LLMClient:
         logger.info(f"Testing connection for provider: '{self.provider}'")
         
         # 1. Local Ollama Case
-        if "Local" in self.provider:
+        if "Ollama" in self.provider:
             try:
-                res = requests.get(f"{self.ollama_host}/api/tags", timeout=5)
+                res = requests.get(f"{self.ollama_host}/api/tags", timeout=3)
                 if res.status_code == 200:
                     models = [m['name'] for m in res.json().get('models', [])]
                     if any(self.model_name in m for m in models):
                         return True, f"🟢 Ollama is active. Found model: {self.model_name}"
-                    return False, f"🔴 Ollama active, but model '{self.model_name}' not found."
-                return False, f"🔴 Ollama returned error: {res.status_code}"
-            except Exception as e:
-                return False, f"🔴 Ollama Connection Failed: {str(e)}"
+                    return False, f"🔴 Ollama is running, but model '{self.model_name}' is not found. Please download it using the 'Download Model' tool below."
+                return False, "🔴 Ollama API is not responding correctly. It might be initializing."
+            except Exception:
+                return False, "🔴 Ollama is not running or not installed. Please start the Ollama application on your system."
         
         # 2. External API Case
         else:
             if not self.api_key:
-                return False, "🔴 API Key is missing. Please enter it in the sidebar."
+                return False, "🔴 API Key is missing. Please enter it in the configuration sidebar."
             
             p_name = self.provider.lower()
+            
+            # --- FORMAT VALIDATION ---
+            if "openai" in p_name and not self.api_key.startswith(("sk-proj-", "sk-")):
+                return False, "🔴 Invalid OpenAI Key Format: Keys should typically start with 'sk-proj-' or 'sk-'."
+            
+            if "anthropic" in p_name and not self.api_key.startswith("sk-ant-"):
+                return False, "🔴 Invalid Anthropic Key Format: Keys must start with 'sk-ant-'."
+
             try:
                 # --- GOOGLE GEMINI ---
                 if "gemini" in p_name or "google" in p_name:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-                    res = requests.get(url, timeout=15)
+                    res = requests.get(url, timeout=10)
                     if res.status_code == 200:
-                        return True, f"🟢 Gemini API verified. Model '{self.model_name}' is ready."
-                    
-                    err_msg = res.json().get('error', {}).get('message', 'Check API Key')
-                    return False, f"🔴 Gemini Error {res.status_code}: {err_msg}"
+                        return True, f"🟢 Gemini API verified."
+                    return False, "🔴 Gemini API Key is incorrect or invalid. Please check your Google AI Studio dashboard."
                 
                 # --- OPENAI ---
                 elif "openai" in p_name:
@@ -76,51 +82,33 @@ class LLMClient:
                     headers = {"Authorization": f"Bearer {self.api_key}"}
                     res = requests.get(url, headers=headers, timeout=10)
                     if res.status_code == 200:
-                        return True, f"🟢 OpenAI API verified. Model '{self.model_name}' is ready."
-                    
-                    err_msg = res.json().get('error', {}).get('message', 'Check API Key')
-                    return False, f"🔴 OpenAI Error {res.status_code}: {err_msg}"
+                        return True, f"🟢 OpenAI API verified."
+                    return False, "🔴 OpenAI API Key is incorrect or invalid. Please check your OpenAI platform dashboard."
 
                 # --- ANTHROPIC ---
                 elif "anthropic" in p_name:
-                    if not self.api_key.startswith("sk-ant-"):
-                        return False, "🔴 Anthropic Error: Key must start with 'sk-ant-'. Please check your key."
-
                     url = "https://api.anthropic.com/v1/messages"
                     headers = {
                         "x-api-key": self.api_key,
                         "anthropic-version": "2023-06-01",
                         "content-type": "application/json"
                     }
-                    
-                    # Use a known-good model for the connection test if the selected one is custom/broken
-                    probe_model = self.model_name if "claude" in self.model_name else "claude-3-5-sonnet-20241022"
-                    
                     payload = {
-                        "model": probe_model,
+                        "model": "claude-3-5-sonnet-20241022",
                         "max_tokens": 1,
                         "messages": [{"role": "user", "content": "Hi"}]
                     }
                     res = requests.post(url, headers=headers, json=payload, timeout=10)
-                    
                     if res.status_code == 200:
-                        return True, f"🟢 Anthropic API verified. Model '{self.model_name}' is ready."
-                    
-                    # Enhanced 404/400 Diagnostic
-                    try:
-                        err_data = res.json()
-                        err_msg = err_data.get('error', {}).get('message', res.text)
-                    except:
-                        err_msg = res.text
-                    
-                    if res.status_code == 404:
-                        return False, f"🔴 Anthropic Error 404: The model '{probe_model}' was not found. This key might not have access to it yet."
-                        
-                    return False, f"🔴 Anthropic Error {res.status_code}: {err_msg}"
+                        return True, f"🟢 Anthropic API verified."
+                    elif res.status_code == 401:
+                        return False, "🔴 Anthropic API Key is incorrect or expired."
+                    else:
+                        return False, f"🔴 Anthropic Error: {res.status_code}. Check your account balance or region limits."
                 
-                return True, f"🟢 {self.provider} config set for {self.model_name}."
+                return True, f"🟢 {self.provider} configured."
             except Exception as e:
-                return False, f"🔴 API Probe Failed: {str(e)}"
+                return False, f"🔴 API Connection Failed: {str(e)}"
 
     @safe_execute(default_val="Error: LLM Generation Failed", log_msg="LLM Generation Error")
     def generate_response(self, system_prompt: str, user_message: str, chat_history: list = None):

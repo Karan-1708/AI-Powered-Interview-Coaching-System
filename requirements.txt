@@ -19,6 +19,8 @@ markdown>=3.5.2
 psutil>=5.9.8
 py-cpuinfo>=9.0.0
 pypdf>=4.0.0
+pdfplumber>=0.10.0
+python-docx>=1.1.0
 
 # --- AI Engines (Base) ---
 # Specific versions of Torch are handled by the startup scripts 

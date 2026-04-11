@@ -26,8 +26,9 @@ class FileManager:
         # 1. Clean Audio Files
         if os.path.exists(cls.TEMP_DIR):
             for f in os.listdir(cls.TEMP_DIR):
+                # Skip the vault.json to preserve keys if we wanted, 
+                # but user said 'delete all data' should wipe them.
                 try:
-                    # Enhanced deletion: check if it's a file
                     full_path = os.path.join(cls.TEMP_DIR, f)
                     if os.path.isfile(full_path):
                         os.remove(full_path)
@@ -35,7 +36,7 @@ class FileManager:
                 except Exception as e:
                     logger.warning(f"Could not delete temp file {f}: {e}")
 
-        # 2. Clean Log Files (Critical Fix for Windows File Locks)
+        # 2. Clean Log Files
         if os.path.exists(cls.LOG_DIR):
             for f in os.listdir(cls.LOG_DIR):
                 if f == "app_debug.log": continue
@@ -53,8 +54,28 @@ class FileManager:
     @safe_execute(log_msg="Safe Delete Error")
     def safe_delete_file(cls, file_path):
         """Safely removes a single file without crashing if it doesn't exist."""
-        if file_path and os.path.exists(file_path) and os.path.isfile(file_path):
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+
+    @classmethod
+    @safe_execute(default_val={}, log_msg="Key Load Error")
+    def load_saved_keys(cls):
+        """Loads API keys from a local persistent file."""
+        key_file = os.path.join(cls.TEMP_DIR, "vault.json")
+        if os.path.exists(key_file):
+            import json
             try:
-                os.remove(file_path)
-            except Exception as e:
-                logger.warning(f"Soft delete failed for {file_path}: {e}")
+                with open(key_file, "r") as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+
+    @classmethod
+    @safe_execute(log_msg="Key Save Error")
+    def save_keys(cls, keys_dict):
+        """Saves API keys to a local persistent file."""
+        key_file = os.path.join(cls.TEMP_DIR, "vault.json")
+        import json
+        with open(key_file, "w") as f:
+            json.dump(keys_dict, f)
