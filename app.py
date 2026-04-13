@@ -229,13 +229,13 @@ def render_setup_wizard(w_n):
         if res_f:
             res_text = parse_file(res_f)
             if res_text: st.session_state['resume_text'] = res_text
-            else: st.sidebar.warning(f"⚠️ Could not read resume: {res_f.name}"); st.session_state['resume_text'] = None
+            else: st.warning(f"⚠️ Could not read resume: {res_f.name}"); st.session_state['resume_text'] = None
         else: st.session_state['resume_text'] = ""
 
         if jd_f:
             jd_text = parse_file(jd_f)
             if jd_text: st.session_state['job_desc_text'] = jd_text
-            else: st.sidebar.warning(f"⚠️ Could not read job description: {jd_f.name}"); st.session_state['job_desc_text'] = None
+            else: st.warning(f"⚠️ Could not read job description: {jd_f.name}"); st.session_state['job_desc_text'] = None
         else: st.session_state['job_desc_text'] = ""
 
         if st.button("Generate Interview Rounds", disabled=not (ind and role), use_container_width=True):
@@ -353,14 +353,35 @@ def main():
             if st.session_state.get('interview_complete'):
                 if 'final_feedback' not in st.session_state:
                     with st.spinner("Analyzing..."):
-                        v = len(st.session_state['aggregated_metrics']); t_w = sum([m['metrics']['wpm'] for m in st.session_state['aggregated_metrics']])
-                        t_f = sum([m['metrics']['filler_count'] for m in st.session_state['aggregated_metrics']]); t_d = sum([m['duration'] for m in st.session_state['aggregated_metrics']])
+                        v = len(st.session_state['aggregated_metrics'])
+                        t_w = sum([m['metrics']['wpm'] for m in st.session_state['aggregated_metrics']])
+                        t_f = sum([m['metrics']['filler_count'] for m in st.session_state['aggregated_metrics']])
+                        t_d = sum([m['duration'] for m in st.session_state['aggregated_metrics']])
+                        
+                        # New Metrics Aggregation
+                        t_p = sum([m['metrics'].get('pause_count', 0) for m in st.session_state['aggregated_metrics']])
+                        t_b = sum([m['metrics'].get('blunder_count', 0) for m in st.session_state['aggregated_metrics']])
+                        tones = [m['metrics'].get('tone_label', 'Neutral') for m in st.session_state['aggregated_metrics']]
+                        dom_tone = max(set(tones), key=tones.count) if tones else "Neutral"
+                        
                         avg_w = t_w / v if v > 0 else 0; full_t = ""
                         for msg in st.session_state['chat_history']: full_t += f"<b>{'Interviewer' if msg['role'] == 'assistant' else 'Candidate'}:</b> {msg['content']}<br><br>\n"
                         f_p = Personas.get_final_feedback_prompt(st.session_state['seniority'], st.session_state['job_title'], st.session_state['industry'], full_t)
                         f_f = APIClient.generate_response(Personas.AI_COACH['system_prompt'], f_p, [], st.session_state['engine_config'], resume_context=st.session_state['resume_text'])
-                        HistoryManager.save_session(avg_w, t_f, "Analysis", "Multi-Turn")
-                        st.session_state.update({'final_feedback': f_f, 'full_transcript': full_t, 'avg_wpm': avg_w, 'total_fillers': t_f, 'total_duration': t_d})
+                        
+                        # Save session with dominant tone
+                        HistoryManager.save_session(avg_w, t_f, dom_tone, "Multi-Turn")
+                        
+                        st.session_state.update({
+                            'final_feedback': f_f, 
+                            'full_transcript': full_t, 
+                            'avg_wpm': avg_w, 
+                            'total_fillers': t_f, 
+                            'total_duration': t_d,
+                            'total_pauses': t_p,
+                            'total_blunders': t_b,
+                            'dominant_tone': dom_tone
+                        })
                 render_final_analysis(st.session_state)
 
         with tab_history: render_history_dashboard()

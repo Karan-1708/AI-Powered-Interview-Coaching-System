@@ -18,10 +18,19 @@ def render_final_analysis(session_data):
         st.markdown(session_data['final_feedback'])
         
     with tab_met:
+        # Row 1: Speed and Basics
         c1, c2, c3 = st.columns(3)
-        c1.metric("Avg Pacing", f"{session_data['avg_wpm']:.0f} WPM")
-        c2.metric("Total Fillers", session_data['total_fillers'])
+        c1.metric("Avg Pacing", f"{session_data['avg_wpm']:.0f} WPM", help="Ideal range is 130-160 WPM.")
+        c2.metric("Total Fillers", session_data['total_fillers'], help="Count of 'um', 'uh', 'like', etc.")
         c3.metric("Speaking Time", f"{session_data['total_duration']:.1f}s")
+        
+        st.divider()
+        
+        # Row 2: Advanced Acoustic Metrics
+        c4, c5, c6 = st.columns(3)
+        c4.metric("Awkward Pauses", session_data.get('total_pauses', 0), help="Silences longer than 1.5 seconds.")
+        c5.metric("Stutters/Blunders", session_data.get('total_blunders', 0), help="Caught repetitions or mid-sentence corrections.")
+        c6.metric("Dominant Tone", session_data.get('dominant_tone', 'Neutral'), help="Calculated based on your pitch variation and energy.")
         
     with tab_trans:
         st.markdown(session_data['full_transcript'], unsafe_allow_html=True)

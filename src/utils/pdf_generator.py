@@ -86,6 +86,9 @@ class PDFGenerator:
             <ul>
                 <li><b>Average Pacing:</b> {metrics_data['wpm']:.0f} WPM (Ideal Range: 130-160)</li>
                 <li><b>Total Filler Words:</b> {metrics_data['fillers']} (Um, Uh, Like)</li>
+                <li><b>Awkward Pauses:</b> {metrics_data.get('pauses', 0)} (Silences > 1.5s)</li>
+                <li><b>Stutters/Blunders:</b> {metrics_data.get('blunders', 0)} (Repetitions/Corrections)</li>
+                <li><b>Dominant Tone:</b> {metrics_data.get('tone', 'Neutral')}</li>
                 <li><b>Total Speaking Time:</b> {metrics_data['duration']:.1f} Seconds</li>
             </ul>
             """
