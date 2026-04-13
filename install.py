@@ -117,9 +117,24 @@ def scan_system() -> dict:
 def _cpu_name() -> str:
     try:
         if platform.system() == "Windows":
-            r = subprocess.run("wmic cpu get Name", shell=True, capture_output=True, text=True)
-            lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and l.strip() != "Name"]
-            return lines[0] if lines else "Unknown CPU"
+            # 1. Try modern PowerShell CIM (Highest accuracy for Ryzen/Intel names)
+            try:
+                cmd = "powershell -command \"(Get-CimInstance Win32_Processor).Name\""
+                r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if r.returncode == 0 and r.stdout.strip():
+                    return r.stdout.strip()
+            except: pass
+
+            # 2. Fallback to older WMIC
+            try:
+                r = subprocess.run("wmic cpu get Name", shell=True, capture_output=True, text=True)
+                lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and l.strip().lower() != "name"]
+                if lines: return lines[0]
+            except: pass
+            
+            # 3. Last resort: Environment variable (Technical jargon)
+            return os.environ.get("PROCESSOR_IDENTIFIER", "Generic Windows CPU")
+            
         elif platform.system() == "Darwin":
             r = subprocess.run("sysctl -n machdep.cpu.brand_string", shell=True, capture_output=True, text=True)
             return r.stdout.strip() or "Apple Silicon"
@@ -136,9 +151,22 @@ def _cpu_name() -> str:
 def _ram_gb() -> float:
     try:
         if platform.system() == "Windows":
+            # 1. Try WMIC (returns KB)
             r = subprocess.run("wmic OS get TotalVisibleMemorySize", shell=True, capture_output=True, text=True)
-            lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and not l.strip().startswith("Total")]
-            return round(int(lines[0]) / 1024 / 1024, 1) if lines else 0.0
+            lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and l.strip().isdigit()]
+            if lines:
+                return round(int(lines[0]) / (1024 * 1024), 1)
+            
+            # 2. Try systeminfo fallback
+            r = subprocess.run("systeminfo", shell=True, capture_output=True, text=True)
+            for line in r.stdout.splitlines():
+                if "Total Physical Memory" in line:
+                    # Extract numeric part (e.g., "32,681 MB" -> 32681)
+                    parts = line.split(":", 1)[1].strip().replace(",", "").split()
+                    if parts:
+                        val = int(parts[0])
+                        return round(val / 1024, 1) if "MB" in line else round(val, 1)
+            
         elif platform.system() == "Darwin":
             r = subprocess.run("sysctl -n hw.memsize", shell=True, capture_output=True, text=True)
             return round(int(r.stdout.strip()) / 1024 ** 3, 1)
@@ -146,7 +174,7 @@ def _ram_gb() -> float:
             with open("/proc/meminfo") as f:
                 for line in f:
                     if "MemTotal" in line:
-                        return round(int(line.split()[1]) / 1024 / 1024, 1)
+                        return round(int(line.split()[1]) / (1024 * 1024), 1)        
     except Exception:
         pass
     return 0.0
@@ -179,7 +207,7 @@ def _detect_gpu() -> dict:
     if platform.system() == "Windows":
         try:
             r = subprocess.run("wmic path win32_VideoController get name", shell=True, capture_output=True, text=True)
-            lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and l.strip() != "Name"]
+            lines = [l.strip() for l in r.stdout.splitlines() if l.strip() and l.strip().lower() != "name"]
             if lines:
                 name = lines[0]
                 vendor = "amd" if ("amd" in name.lower() or "radeon" in name.lower()) else "intel" if "intel" in name.lower() else "other"
@@ -203,10 +231,10 @@ def print_system_report(s: dict):
   {C.DIM}┌───────────────────────────────────────────────┐{C.RESET}
   {C.DIM}│{C.RESET}  {C.BOLD}System Scan Results{C.RESET}
   {C.DIM}│{C.RESET}
-  {C.DIM}│{C.RESET}  {C.DIM}Operating System{C.RESET}   {C.WHITE}{s['os']} {s['os_release']}{C.RESET}
-  {C.DIM}│{C.RESET}  {C.DIM}Architecture     {C.RESET}   {C.WHITE}{s['machine']}  ({s['arch']}){C.RESET}
+  {C.DIM}│{C.RESET}  {C.DIM}OS               {C.RESET}   {C.WHITE}{s['os']} {s['os_release']}{C.RESET}
+  {C.DIM}│{C.RESET}  {C.DIM}OS Architecture  {C.RESET}   {C.WHITE}{s['machine']}  ({s['arch']}){C.RESET}
   {C.DIM}│{C.RESET}  {C.DIM}CPU              {C.RESET}   {C.WHITE}{s['cpu_name']}{C.RESET}
-  {C.DIM}│{C.RESET}  {C.DIM}CPU Cores        {C.RESET}   {C.WHITE}{s['cpu_cores']}{C.RESET}
+  {C.DIM}│{C.RESET}  {C.DIM}CPU Threads      {C.RESET}   {C.WHITE}{s['cpu_cores']}{C.RESET}
   {C.DIM}│{C.RESET}  {C.DIM}RAM              {C.RESET}   {C.WHITE}{s['ram_gb']} GB{C.RESET}
   {C.DIM}│{C.RESET}  {C.DIM}GPU              {C.RESET}   {C.WHITE}{gpu_label}{C.RESET}{accel}
   {C.DIM}│{C.RESET}  {C.DIM}Python           {C.RESET}   {C.WHITE}{s['python_version']}{C.RESET}
@@ -278,13 +306,6 @@ def _scan_for_venvs(root: Path = Path("."), max_depth: int = 2) -> list[dict]:
     Walk up to max_depth directory levels and identify venv directories by
     STRUCTURE, not by name — so custom names like 'ai-venv', 'my-env',
     'project-3.11', etc. are all detected correctly.
-
-    A directory is treated as a venv if it contains the Python binary at the
-    expected platform path:
-      Windows : <dir>/Scripts/python.exe
-      Mac/Lin : <dir>/bin/python  OR  <dir>/bin/python3
-
-    Also skips common non-venv dirs to keep the scan fast.
     """
     candidates  = []
     IS_WINDOWS  = platform.system() == "Windows"
@@ -447,7 +468,6 @@ BIN_DIR = Path("bin")
 FFMPEG_URLS = {
     "Windows": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "Linux":   "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
-    # macOS: installed via Homebrew (no good universal portable binary)
 }
 
 def ensure_ffmpeg():
@@ -478,10 +498,6 @@ def ensure_ffmpeg():
         warn("Homebrew not found. Install FFmpeg manually: https://ffmpeg.org/download.html")
         return
 
-    if os_name == "Linux" and not FFMPEG_URLS.get("Linux"):
-        _try_apt_ffmpeg()
-        return
-
     # 4. Download portable binary
     url = FFMPEG_URLS.get(os_name)
     if not url:
@@ -505,15 +521,6 @@ def _register_bin_dir():
     """Add ./bin to PATH so the app can find ffmpeg at runtime."""
     bin_abs = str(BIN_DIR.resolve())
     os.environ["PATH"] = bin_abs + os.pathsep + os.environ.get("PATH", "")
-
-
-def _try_apt_ffmpeg():
-    info("Attempting apt install of FFmpeg…")
-    r = subprocess.run("sudo apt-get update -qq && sudo apt-get install -y ffmpeg", shell=True)
-    if r.returncode == 0:
-        ok("FFmpeg installed via apt")
-    else:
-        warn("Could not install FFmpeg automatically. Please run:  sudo apt install ffmpeg")
 
 
 def _download_portable_ffmpeg(url: str, os_name: str):
@@ -589,6 +596,8 @@ APP_PACKAGES = [
     "psutil",
     "py-cpuinfo",
     "pypdf",
+    "pdfplumber",
+    "python-docx",
     "edge-tts",
     "python-dotenv",
     "faster-whisper",
@@ -626,17 +635,19 @@ def install_dependencies(sys_info: dict):
 
     # ── Install app packages ─────────────────────────────────────────────────
     info("Installing application packages…")
-    _pip_install(python, APP_PACKAGES)
-    ok("All packages installed")
+    success = _pip_install(python, APP_PACKAGES)
+    if success:
+        ok("All packages installed")
+    else:
+        err("Package installation encountered errors. Re-running with more detail...")
+        # Try again without quiet to see errors
+        _pip_install(python, APP_PACKAGES, quiet=False)
 
 
 def _get_installed_torch_info(python: str) -> dict | None:
     """
     Returns dict with keys {version, is_cpu_only, cuda_version} if torch is
     installed inside the venv, or None if torch is not installed at all.
-
-    'is_cpu_only' is True when the wheel was built without CUDA support
-    (i.e. torch.version.cuda is None).
     """
     probe = (
         "import torch, json; "
@@ -662,11 +673,6 @@ def _force_uninstall_torch(python: str):
         [python, "-m", "pip", "uninstall"] + packages + ["-y"],
         capture_output=True, text=True
     )
-    # Run twice — some versions leave stubs behind
-    subprocess.run(
-        [python, "-m", "pip", "uninstall"] + packages + ["-y"],
-        capture_output=True, text=True
-    )
 
 
 def _install_torch(python: str, sys_info: dict):
@@ -674,7 +680,6 @@ def _install_torch(python: str, sys_info: dict):
     py_tuple = sys_info["python_tuple"]
 
     # ── Determine the correct CUDA index for this machine ────────────────────
-    # Python 3.12+ → CUDA 12.4   |   Python 3.11 and older → CUDA 12.1
     cuda_index = TORCH_INDEXES["cuda_new"] if py_tuple >= (3, 12) else TORCH_INDEXES["cuda_old"]
     cuda_label = "CUDA 12.4" if py_tuple >= (3, 12) else "CUDA 12.1"
 
@@ -685,25 +690,17 @@ def _install_torch(python: str, sys_info: dict):
         installed_ver = existing["version"]
 
         if backend == "cuda" and existing["is_cpu_only"]:
-            # ── BAD: NVIDIA GPU present but a CPU-only torch wheel is installed ──
-            warn(
-                f"PyTorch {installed_ver} is installed but it is a CPU-only build.\n"
-                f"  Your NVIDIA GPU requires a CUDA build — replacing it now…"
-            )
+            warn(f"PyTorch {installed_ver} is installed but it is a CPU-only build.")
             _force_uninstall_torch(python)
             info(f"Force-uninstalled CPU torch. Installing {cuda_label} build…")
             _pip_install_indexed(python, ["torch", "torchaudio"], cuda_index, cuda_label)
             return
 
         if backend == "cuda" and not existing["is_cpu_only"]:
-            # CUDA torch already installed — check it matches the right cu version
             installed_cuda = existing.get("cuda_version") or ""
             expected_cu    = "12.4" if py_tuple >= (3, 12) else "12.1"
             if not installed_cuda.startswith(expected_cu.replace(".", "")):
-                warn(
-                    f"PyTorch {installed_ver} is CUDA-enabled but uses CUDA {installed_cuda}.\n"
-                    f"  Expected CUDA {expected_cu} for your Python version — reinstalling…"
-                )
+                warn(f"PyTorch {installed_ver} uses CUDA {installed_cuda}. Expected CUDA {expected_cu}.")
                 _force_uninstall_torch(python)
                 _pip_install_indexed(python, ["torch", "torchaudio"], cuda_index, cuda_label)
             else:
@@ -714,30 +711,30 @@ def _install_torch(python: str, sys_info: dict):
             ok(f"PyTorch {installed_ver} already installed (MPS) — skipping")
             return
 
-        # CPU backend — any existing torch is fine
         ok(f"PyTorch {installed_ver} already installed (CPU) — skipping")
         return
 
-    # ── torch is NOT installed at all — fresh install ────────────────────────
+    # ── torch is NOT installed at all ────────────────────────────────────────
     if backend == "cuda":
         info(f"NVIDIA GPU detected — installing PyTorch ({cuda_label})…")
         _pip_install_indexed(python, ["torch", "torchaudio"], cuda_index, cuda_label)
-
     elif backend == "mps":
         info("Apple Silicon detected — installing PyTorch with MPS support…")
         _pip_install(python, ["torch", "torchaudio"])
         ok("PyTorch (MPS / Apple Silicon) installed")
-
     else:
         info("No GPU detected — installing PyTorch (CPU mode)…")
         _pip_install_indexed(python, ["torch", "torchaudio"], TORCH_INDEXES["cpu"], "CPU")
 
 
-def _pip_install(python: str, packages: list):
-    cmd = [python, "-m", "pip", "install"] + packages + ["--quiet"]
+def _pip_install(python: str, packages: list, quiet: bool = True):
+    cmd = [python, "-m", "pip", "install"] + packages
+    if quiet: cmd.append("--quiet")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         warn(f"Some packages may have failed:\n  {r.stderr[:300]}")
+        return False
+    return True
 
 
 def _pip_install_indexed(python: str, packages: list, index_url: str, label: str):
@@ -774,11 +771,7 @@ def ensure_env_file():
         info("Open .env to fill in your API keys before first use.")
     else:
         warn(".env.example not found — creating a blank .env")
-        env_path.write_text(
-            "# AI Interview Coach — Environment Variables\n"
-            "# Add your API keys and settings here.\n\n"
-            "ANTHROPIC_API_KEY=\n"
-        )
+        env_path.write_text("# AI Interview Coach Variables\nINTERNAL_API_KEY=dev-key-12345\n")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  VERIFY INSTALL
@@ -804,19 +797,14 @@ def verify_install(sys_info: dict):
             err(f"{name}  ← could not import")
             all_ok = False
 
-    # Check torch backend
     if backend == "cuda":
         r = subprocess.run([python, "-c", "import torch; assert torch.cuda.is_available()"], capture_output=True)
-        if r.returncode == 0:
-            ok("CUDA acceleration verified")
-        else:
-            warn("CUDA not detected at runtime — will fall back to CPU")
+        if r.returncode == 0: ok("CUDA acceleration verified")
+        else: warn("CUDA not detected at runtime — fallback to CPU")
     elif backend == "mps":
         r = subprocess.run([python, "-c", "import torch; assert torch.backends.mps.is_available()"], capture_output=True)
-        if r.returncode == 0:
-            ok("MPS (Apple Silicon) acceleration verified")
-        else:
-            warn("MPS not available at runtime — will fall back to CPU")
+        if r.returncode == 0: ok("MPS acceleration verified")
+        else: warn("MPS fallback to CPU")
 
     return all_ok
 
@@ -828,48 +816,24 @@ TOTAL_STEPS = 6
 
 def setup():
     banner()
-
-    # ── Step 1: System Scan ──────────────────────────────────────────────────
     section(1, TOTAL_STEPS, "Scanning Your System")
     sys_info = scan_system()
     print_system_report(sys_info)
-
-    # ── Step 2: Python Version ───────────────────────────────────────────────
     section(2, TOTAL_STEPS, "Checking Python Version")
     check_python()
-
-    # ── Step 3: Virtual Environment ──────────────────────────────────────────
     section(3, TOTAL_STEPS, "Preparing Virtual Environment")
     ensure_venv()
-
-    # ── Step 4: FFmpeg ───────────────────────────────────────────────────────
     section(4, TOTAL_STEPS, "Checking FFmpeg")
     ensure_ffmpeg()
-
-    # ── Step 5: Dependencies ─────────────────────────────────────────────────
     section(5, TOTAL_STEPS, "Installing Dependencies")
     install_dependencies(sys_info)
-
-    # ── Step 6: Environment File ─────────────────────────────────────────────
     section(6, TOTAL_STEPS, "Setting Up Configuration")
     ensure_env_file()
-
-    # ── Final Verification ───────────────────────────────────────────────────
     print(f"\n{C.BOLD}{C.MAGENTA}  Verifying installation…{C.RESET}")
     all_ok = verify_install(sys_info)
-
-    # ── Done ─────────────────────────────────────────────────────────────────
-    print(f"""
-{C.GREEN}{C.BOLD}╔══════════════════════════════════════════════════════════╗
-║                  Setup Complete!  🎉                     ║
-╚══════════════════════════════════════════════════════════╝{C.RESET}
-""")
-    if not all_ok:
-        warn("Some packages had issues. The app may still work — check warnings above.")
-
-    # Return the venv python path for use by the launchers
+    print(f"\n{C.GREEN}{C.BOLD}╔══════════════════════════════════════════════════════════╗\n║                  Setup Complete!  🎉                     ║\n╚══════════════════════════════════════════════════════════╝{C.RESET}")
+    if not all_ok: warn("Issues detected. Check warnings above.")
     return str(_venv_python())
-
 
 if __name__ == "__main__":
     setup()
