@@ -117,7 +117,7 @@ def scan_system() -> dict:
 def _cpu_name() -> str:
     try:
         if platform.system() == "Windows":
-            # 1. Try modern PowerShell CIM (Highest accuracy for Ryzen/Intel names)
+            # 1. Trying modern PowerShell CIM (Highest accuracy for Ryzen/Intel names)
             try:
                 cmd = "powershell -command \"(Get-CimInstance Win32_Processor).Name\""
                 r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
