@@ -9,7 +9,7 @@ python-dotenv>=1.0.0
 # --- Data & Analytics ---
 pandas>=2.1.0
 plotly>=5.18.0
-numpy>=1.24.0
+numpy>=2.1.0
 
 # --- Utilities ---
 requests>=2.31.0
@@ -23,8 +23,6 @@ pdfplumber>=0.10.0
 python-docx>=1.1.0
 
 # --- AI Engines (Base) ---
-# Specific versions of Torch are handled by the startup scripts 
-# to ensure hardware compatibility (CUDA vs Apple Silicon).
 faster-whisper>=1.0.0
 librosa>=0.10.1
 soundfile>=0.12.1

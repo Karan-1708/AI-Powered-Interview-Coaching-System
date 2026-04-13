@@ -50,9 +50,10 @@ Our **`install.py`** script is designed to detect your hardware and configure th
 If you prefer total control:
 
 1. **Create venv**: `python -m venv .venv`
-2. **Install Engine**: Use the specific index for your hardware (refer to `install.py` logic for URL links).
-3. **Install Requirements**: `pip install -r requirements.txt`
-4. **Security**: Copy `.env.example` to `.env` and set your `INTERNAL_API_KEY`.
+2. **Activate venv**: `.venv\Scripts\Activate.ps1`
+3. **Install Engine**: Use the specific index for your hardware (refer to `install.py` logic for URL links).
+4. **Install Requirements**: `pip install -r requirements.txt`
+5. **Security**: Copy `.env.example` to `.env` and set your `INTERNAL_API_KEY`.
 
 ---
 

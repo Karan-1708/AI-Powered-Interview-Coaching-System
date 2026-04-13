@@ -594,17 +594,18 @@ APP_PACKAGES = [
     "faster-whisper",
     "librosa",
     "soundfile",
-    "numpy<2.0.0",
+    "numpy",
     "uvicorn[standard]",
     "fastapi",
     "python-multipart",
     "httpx",
 ]
 
+
 # PyTorch wheel index URLs
 TORCH_INDEXES = {
     "cuda_new":  "https://download.pytorch.org/whl/cu124",   # Python 3.11–3.12, CUDA 12.4
-    "cuda_old":  "https://download.pytorch.org/whl/cu121",   # Python 3.10, CUDA 12.1
+    "cuda_old":  "https://download.pytorch.org/whl/cu121",   # Python 3.11, CUDA 12.1
     "cpu":       "https://download.pytorch.org/whl/cpu",
     "default":   None,   # PyPI default (Mac MPS, or fallback)
 }
