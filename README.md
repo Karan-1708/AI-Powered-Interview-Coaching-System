@@ -40,6 +40,7 @@ For more detailed information, please refer to our dedicated guides:
 - **[User Guide](User-Guide.md)**: Perfect for non-technical users. Covers one-click setup, interview steps, and feature usage.
 - **[Developer Guide](Dev-Guide.md)**: For technical users. Covers manual installation, API architecture, and automated setup via `install.py`.
 - **[Technical Documentation](DOCUMENTATION.md)**: A deep dive into the system architecture, AI engines, and internal security protocols.
+- **[Future Plans](Future-Plans.md)**: A look at what's coming next — upcoming features and improvements on the roadmap.
 
 ---
 
