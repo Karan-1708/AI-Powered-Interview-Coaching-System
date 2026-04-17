@@ -8,7 +8,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
@@ -16,10 +17,10 @@ services:
       - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         reservations:
@@ -40,7 +41,8 @@ services:
       api:
         condition: service_healthy
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - API_URL=http://api:8000
     volumes:

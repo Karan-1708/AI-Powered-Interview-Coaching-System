@@ -102,6 +102,7 @@ class PullModelRequest(BaseModel):
 # --- ENDPOINTS ---
 
 @app.get("/", tags=["Health"])
+@app.get("/health", tags=["Health"])
 def root():
     return {"status": "online", "message": "Data Drifters API is running."}
 

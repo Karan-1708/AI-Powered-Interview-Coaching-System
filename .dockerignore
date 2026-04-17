@@ -44,3 +44,6 @@ tests
 # OS
 .DS_Store
 Thumbs.db
+
+# Personal
+class/
