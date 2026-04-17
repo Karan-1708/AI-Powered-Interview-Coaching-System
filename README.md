@@ -48,7 +48,7 @@ For more detailed information, please refer to our dedicated guides:
 
 This project was built with ❤️ by developers figuring it out one bug 🐛 at a time — firm believers that “it works on my machine” is a perfectly valid deployment strategy, while still trying to ship something genuinely useful (and only *slightly* break production in the process).
 
-Huge thanks to ***Gemini*** for carrying 90% of the workload, tolerating our bugs, not rage-quitting like a real developer would, and never once asking “have you tried Googling it?".
+Huge thanks to ***Gemini & Claude*** for carrying 90% of the workload, tolerating our bugs, not rage-quitting like a real developer would, and never once asking “have you tried Googling it?".
 
 Works on our machine — good luck everywhere else.
 
