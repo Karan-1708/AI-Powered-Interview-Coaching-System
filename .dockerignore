@@ -1,0 +1,46 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.eggs
+dist
+build
+*.whl
+
+# Virtual environments
+ai-venv
+venv
+.venv
+env
+
+# Dev/IDE
+.vscode
+.idea
+*.code-workspace
+
+# Secrets — never bake into image
+.env
+
+# Runtime dirs (mounted as volumes)
+temp_data
+logs
+
+# Docs & class materials
+class
+*.md
+User-Guide.md
+Dev-Guide.md
+DOCUMENTATION.md
+
+# Tests
+tests
+
+# OS
+.DS_Store
+Thumbs.db

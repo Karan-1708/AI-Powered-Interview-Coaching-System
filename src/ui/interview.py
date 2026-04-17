@@ -148,14 +148,14 @@ def render_interview_loop(info):
         else:
             st.session_state['aggregated_metrics'].append({"transcript": t, "metrics": m, "duration": d})
             st.session_state['chat_history'].append({"role": "user", "content": t})
-            with st.chat_message("assistant", avatar="🤖"):
-                nxt = st.write_stream(APIClient.stream_response(
+            with st.spinner("Thinking..."):
+                nxt = APIClient.generate_response(
                     st.session_state['sys_p'], t,
                     st.session_state['chat_history'][:-1],
                     st.session_state['engine_config'],
                     resume_context=st.session_state.get('resume_text', ""),
                     job_context=st.session_state.get('job_desc_text', "")
-                ))
+                )
             nxt = clean_llm_text(nxt)
             trigger_voice(nxt)
             st.session_state['chat_history'].append({"role": "assistant", "content": nxt})

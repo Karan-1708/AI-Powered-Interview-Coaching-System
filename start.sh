@@ -44,7 +44,7 @@ ${CYAN}${BOLD}+----------------------------------------------------------+
 # Add local ./bin to PATH now so portable FFmpeg is available throughout
 export PATH="$(pwd)/bin:$PATH"
 
-TOTAL=4
+TOTAL=5
 
 # ============================================================
 #  PHASE 1 — Locate / install Python 3.11+
@@ -108,9 +108,71 @@ PY_VER=$("$PYTHON_CMD" --version 2>&1 | awk '{print $2}')
 ok "Python $PY_VER found at $(command -v $PYTHON_CMD)"
 
 # ============================================================
-#  PHASE 2 — Run the Python setup engine (install.py)
+#  PHASE 2 — Check / install Ollama
 # ============================================================
-section 2 $TOTAL "Running Setup Engine"
+section 2 $TOTAL "Checking Ollama (Local AI Engine)"
+
+_install_ollama() {
+    OS_TYPE="$(uname -s)"
+    if [ "$OS_TYPE" = "Linux" ]; then
+        info "Installing Ollama via official install script..."
+        if curl -fsSL https://ollama.com/install.sh | sh; then
+            ok "Ollama installed"
+            info "Start it with: ollama serve"
+        else
+            warn "Ollama install failed. Visit https://ollama.com for manual instructions."
+        fi
+    elif [ "$OS_TYPE" = "Darwin" ]; then
+        if command -v brew &>/dev/null; then
+            info "Installing Ollama via Homebrew..."
+            if brew install ollama; then
+                ok "Ollama installed via Homebrew"
+                info "Start it with: ollama serve"
+                return
+            fi
+        fi
+        # Fallback: download the macOS app
+        info "Downloading Ollama.app for macOS..."
+        TMP_ZIP="$(mktemp /tmp/ollama_XXXXXX.zip)"
+        if curl -fsSL "https://ollama.com/download/Ollama-darwin.zip" -o "$TMP_ZIP"; then
+            unzip -q "$TMP_ZIP" -d /Applications 2>/dev/null || true
+            rm -f "$TMP_ZIP"
+            ok "Ollama.app extracted to /Applications"
+            info "Launch it from Applications or run: open /Applications/Ollama.app"
+        else
+            rm -f "$TMP_ZIP"
+            warn "Download failed. Install manually from https://ollama.com"
+        fi
+    else
+        warn "Auto-install not supported on $OS_TYPE. Visit https://ollama.com"
+    fi
+}
+
+if command -v ollama &>/dev/null; then
+    ok "Ollama is already installed"
+    if ollama list &>/dev/null 2>&1; then
+        info "Ollama service is running"
+    else
+        info "Ollama installed — run 'ollama serve' to start the local model server"
+    fi
+else
+    warn "Ollama not found."
+    info "Ollama enables free local AI inference (no API key needed)."
+    info "You can skip this and use a cloud provider (OpenAI / Gemini / Anthropic) instead."
+    printf "  \033[93mInstall Ollama now? [Y/n]: \033[0m"
+    read -r OLLAMA_CHOICE </dev/tty 2>/dev/null || OLLAMA_CHOICE="y"
+    case "$OLLAMA_CHOICE" in
+        [Nn]*)
+            info "Skipping. Install later from https://ollama.com" ;;
+        *)
+            _install_ollama ;;
+    esac
+fi
+
+# ============================================================
+#  PHASE 3 — Run the Python setup engine (install.py)
+# ============================================================
+section 3 $TOTAL "Running Setup Engine"
 
 if [ ! -f "install.py" ]; then
     fatal "install.py not found. Make sure you are running this script from the project root folder."
@@ -136,9 +198,9 @@ source .venv/bin/activate
 export PATH="$(pwd)/bin:$PATH"
 
 # ============================================================
-#  PHASE 3 — Start backend server
+#  PHASE 4 — Start backend server
 # ============================================================
-section 3 $TOTAL "Starting Backend Server"
+section 4 $TOTAL "Starting Backend Server"
 
 info "Launching FastAPI backend on http://localhost:8000 ..."
 
@@ -176,7 +238,7 @@ else
 fi
 
 # ============================================================
-#  PHASE 4 — Launch Streamlit frontend (foreground)
+#  PHASE 5 — Launch Streamlit frontend (foreground)
 # ============================================================
 section 4 $TOTAL "Launching Dashboard"
 

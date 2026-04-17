@@ -152,19 +152,18 @@ def main():
                         st.session_state['resume_text'],
                         st.session_state['job_desc_text']
                     )
-                    st.session_state['chat_history'] = []
-                    with st.chat_message("assistant", avatar="🤖"):
-                        first_q = st.write_stream(APIClient.stream_response(
+                    with st.spinner("Preparing your interviewer..."):
+                        first_q = APIClient.generate_response(
                             st.session_state['sys_p'],
                             "Start the interview. Greet me and ask ONLY your first question.",
                             [],
                             st.session_state['engine_config'],
                             resume_context=st.session_state.get('resume_text', ""),
                             job_context=st.session_state.get('job_desc_text', "")
-                        ))
+                        )
                     first_q = clean_llm_text(first_q)
                     trigger_voice(first_q)
-                    st.session_state['chat_history'].append({"role": "assistant", "content": first_q})
+                    st.session_state['chat_history'] = [{"role": "assistant", "content": first_q}]
                     st.rerun()
                 render_interview_loop(st.session_state['round_info'])
 

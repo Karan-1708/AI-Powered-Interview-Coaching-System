@@ -58,18 +58,36 @@ class FileManager:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
+    # Provider label → environment variable name
+    _ENV_KEY_MAP = {
+        "OpenAI":        "OPENAI_API_KEY",
+        "Anthropic":     "ANTHROPIC_API_KEY",
+        "Google Gemini": "GOOGLE_API_KEY",
+    }
+
     @classmethod
     @safe_execute(default_val={}, log_msg="Key Load Error")
     def load_saved_keys(cls):
-        """Loads API keys from a local persistent file."""
+        """Loads API keys: vault.json takes precedence, env vars fill any gaps."""
+        keys = {}
+
+        # 1. Seed from environment variables (lowest priority)
+        for provider, env_var in cls._ENV_KEY_MAP.items():
+            val = os.environ.get(env_var, "").strip()
+            if val:
+                keys[provider] = val
+
+        # 2. Override with vault.json (highest priority)
         key_file = os.path.join(cls.TEMP_DIR, "vault.json")
         if os.path.exists(key_file):
             try:
                 with open(key_file, "r") as f:
-                    return json.load(f)
-            except:
-                return {}
-        return {}
+                    saved = json.load(f)
+                keys.update(saved)
+            except Exception:
+                pass
+
+        return keys
 
     @classmethod
     @safe_execute(log_msg="Key Save Error")

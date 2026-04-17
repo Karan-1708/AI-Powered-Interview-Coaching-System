@@ -187,7 +187,7 @@ class LLMClient:
         
         # Reasoning models (o1, o3, o4, gpt-5, etc.) use 'max_completion_tokens'
         # and do not support the 'system' role or 'temperature' adjustments in the same way.
-        is_reasoning_model = bool(re.match(r"^(o\d|gpt-5)", self.model_name.lower()))
+        is_reasoning_model = bool(re.match(r"^(o\d+|gpt-5)", self.model_name.lower()))
         
         messages = []
         if is_reasoning_model:
@@ -320,7 +320,7 @@ class LLMClient:
     def _stream_openai(self, system, user, history):
         url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        is_reasoning_model = bool(re.match(r"^(o\d|gpt-5)", self.model_name.lower()))
+        is_reasoning_model = bool(re.match(r"^(o\d+|gpt-5)", self.model_name.lower()))
         messages = []
         if is_reasoning_model:
             messages.append({"role": "user", "content": f"INSTRUCTIONS: {system}"})

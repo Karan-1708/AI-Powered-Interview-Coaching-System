@@ -2,15 +2,17 @@
 AI Interview Coach — Universal Setup Engine
 ============================================
 Handles system scanning, Python validation, virtual environment management,
-FFmpeg portable install, GPU-aware PyTorch selection, and .env creation.
+FFmpeg portable install, GPU-aware PyTorch selection, Ollama install, and .env creation.
 
 Designed to be friendly for non-technical users.
 Run directly:  python install.py
 Or called by:  start.bat / start.sh
 """
+from __future__ import annotations   # allow dict|None hints on Python 3.9/3.10
 
 import os
 import sys
+import re
 import platform
 import subprocess
 import shutil
@@ -243,21 +245,192 @@ def print_system_report(s: dict):
   {C.DIM}└───────────────────────────────────────────────┘{C.RESET}""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  STEP 2 — PYTHON VERSION GATE
+#  STEP 2 — PYTHON VERSION GATE  (auto-install if too old)
 # ══════════════════════════════════════════════════════════════════════════════
 
-MIN_PYTHON = (3, 11)
+MIN_PYTHON    = (3, 11)
+TARGET_PYTHON = "3.12"   # version we install when the system has nothing suitable
+
+# Windows installer — Python 3.12 (64-bit and 32-bit)
+_PY_WIN64 = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
+_PY_WIN32 = "https://www.python.org/ftp/python/3.12.7/python-3.12.7.exe"
+
+
+def _find_compatible_python() -> str | None:
+    """
+    Search PATH and the Windows py launcher for a Python MIN_PYTHON+ executable
+    that is different from the currently running interpreter.
+    Returns the executable path/command, or None if nothing found.
+    """
+    # Windows py launcher can enumerate all installed versions
+    if platform.system() == "Windows" and shutil.which("py"):
+        for v in ("3.13", "3.12", "3.11"):
+            try:
+                r = subprocess.run(["py", f"-{v}", "--version"], capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    # resolve actual path so we can exec it
+                    rp = subprocess.run(["py", f"-{v}", "-c", "import sys; print(sys.executable)"],
+                                        capture_output=True, text=True, timeout=5)
+                    if rp.returncode == 0:
+                        path = rp.stdout.strip()
+                        if path and path != sys.executable:
+                            return path
+            except Exception:
+                continue
+
+    candidates = ["python3.13", "python3.12", "python3.11", "python3", "python"]
+    for cmd in candidates:
+        path = shutil.which(cmd)
+        if not path or os.path.abspath(path) == os.path.abspath(sys.executable):
+            continue
+        try:
+            r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+            ver_str = (r.stdout + r.stderr).strip()
+            m = re.search(r"Python (\d+)\.(\d+)", ver_str)
+            if m and (int(m.group(1)), int(m.group(2))) >= MIN_PYTHON:
+                return path
+        except Exception:
+            continue
+    return None
+
+
+def _relaunch_with(python_path: str):
+    """Replace the current process with the same script running under python_path."""
+    info(f"Re-launching setup with  {C.CYAN}{python_path}{C.RESET} …")
+    print()
+    if platform.system() == "Windows":
+        r = subprocess.run([python_path] + sys.argv)
+        sys.exit(r.returncode)
+    else:
+        os.execv(python_path, [python_path] + sys.argv)
+
+
+def _install_python_windows():
+    """Download and silently install Python 3.12 on Windows."""
+    url = _PY_WIN32 if struct.calcsize("P") == 4 else _PY_WIN64
+    tmp = Path(tempfile.mktemp(suffix=".exe"))
+    try:
+        info(f"Downloading Python {TARGET_PYTHON} installer (~25 MB)…")
+        urllib.request.urlretrieve(url, tmp, _make_dl_hook(f"Python {TARGET_PYTHON}"))
+        print()
+        info("Running installer  (a UAC prompt may appear)…")
+        r = subprocess.run(
+            [str(tmp), "/quiet", "PrependPath=1", "Include_pip=1",
+             "Include_launcher=1", "InstallLauncherAllUsers=0"],
+            check=False
+        )
+        if r.returncode == 0:
+            ok(f"Python {TARGET_PYTHON} installed")
+            # Refresh PATH from registry so the new exe is visible
+            try:
+                import winreg
+                for hive, sub in [
+                    (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                    (winreg.HKEY_CURRENT_USER,  r"Environment"),
+                ]:
+                    try:
+                        with winreg.OpenKey(hive, sub) as k:
+                            v, _ = winreg.QueryValueEx(k, "Path")
+                            os.environ["PATH"] = v + os.pathsep + os.environ.get("PATH", "")
+                    except Exception:
+                        pass
+            except ImportError:
+                pass
+        else:
+            warn(f"Installer exited with code {r.returncode}")
+    except Exception as e:
+        warn(f"Download failed: {e}")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _install_python():
+    """OS-specific Python 3.12 install attempt."""
+    os_name = platform.system()
+
+    if os_name == "Windows":
+        if shutil.which("winget"):
+            info(f"Installing Python {TARGET_PYTHON} via winget…")
+            r = subprocess.run(
+                ["winget", "install", "--id", f"Python.Python.{TARGET_PYTHON}",
+                 "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+                check=False
+            )
+            if r.returncode == 0:
+                ok(f"Python {TARGET_PYTHON} installed via winget")
+                return
+            warn("winget install failed — falling back to direct download…")
+        _install_python_windows()
+
+    elif os_name == "Darwin":
+        if shutil.which("brew"):
+            info(f"Installing Python {TARGET_PYTHON} via Homebrew…")
+            subprocess.run(["brew", "install", f"python@{TARGET_PYTHON}"], check=False)
+            try:
+                r = subprocess.run(["brew", "--prefix", f"python@{TARGET_PYTHON}"],
+                                   capture_output=True, text=True)
+                prefix = r.stdout.strip()
+                if prefix:
+                    os.environ["PATH"] = f"{prefix}/bin:{os.environ.get('PATH', '')}"
+            except Exception:
+                pass
+        else:
+            warn("Homebrew not found. Install it from https://brew.sh then re-run, "
+                 "or install Python manually from https://www.python.org/downloads/")
+
+    elif os_name == "Linux":
+        if shutil.which("apt-get"):
+            info(f"Installing Python {TARGET_PYTHON} via apt…")
+            subprocess.run(["sudo", "apt-get", "update", "-qq"], check=False)
+            subprocess.run(["sudo", "apt-get", "install", "-y",
+                            f"python{TARGET_PYTHON}", f"python{TARGET_PYTHON}-venv",
+                            f"python{TARGET_PYTHON}-dev"], check=False)
+        elif shutil.which("dnf"):
+            info(f"Installing Python {TARGET_PYTHON} via dnf…")
+            subprocess.run(["sudo", "dnf", "install", "-y", f"python{TARGET_PYTHON}"], check=False)
+        elif shutil.which("pacman"):
+            info("Installing Python via pacman…")
+            subprocess.run(["sudo", "pacman", "-S", "--noconfirm", "python"], check=False)
+        else:
+            warn("No supported package manager found. Install Python 3.11+ manually "
+                 "from https://www.python.org/downloads/")
+    else:
+        warn(f"Auto-install not supported on {os_name}. "
+             "Install Python 3.11+ from https://www.python.org/downloads/")
+
 
 def check_python():
     major, minor, micro = sys.version_info[:3]
     ver = f"{major}.{minor}.{micro}"
-    if (major, minor) < MIN_PYTHON:
-        fatal(
-            f"Python {ver} is too old.\n"
-            f"  This application requires Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer.\n"
-            f"  Download the latest version from:  https://www.python.org/downloads/"
-        )
-    ok(f"Python {ver}  ✓")
+
+    if (major, minor) >= MIN_PYTHON:
+        ok(f"Python {ver}  ✓")
+        return
+
+    warn(f"Python {ver} is too old  (requires {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+)")
+
+    # 1. A compatible Python might already be installed under a different name
+    info("Searching for a compatible Python on this system…")
+    candidate = _find_compatible_python()
+    if candidate:
+        ok(f"Found compatible Python: {candidate}")
+        _relaunch_with(candidate)   # does not return
+
+    # 2. Try to install it
+    info(f"Attempting to install Python {TARGET_PYTHON} automatically…")
+    _install_python()
+
+    # 3. Re-check after install
+    candidate = _find_compatible_python()
+    if candidate:
+        ok(f"Python {TARGET_PYTHON} installed successfully")
+        _relaunch_with(candidate)   # does not return
+
+    fatal(
+        f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ could not be installed automatically.\n"
+        f"  Please install it manually from:  https://www.python.org/downloads/\n"
+        f"  Make sure to tick 'Add Python to PATH', then re-run this script."
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 3 — VIRTUAL ENVIRONMENT  (interactive scan + selection)
@@ -809,10 +982,124 @@ def verify_install(sys_info: dict):
     return all_ok
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  STEP 7 — OLLAMA  (local AI inference engine)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_OLLAMA_WIN_URL = "https://ollama.com/download/OllamaSetup.exe"
+_OLLAMA_MAC_URL = "https://ollama.com/download/Ollama-darwin.zip"
+
+
+def ensure_ollama():
+    """Check for Ollama; offer to install it if missing."""
+    if shutil.which("ollama"):
+        try:
+            r = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=4)
+            if r.returncode == 0:
+                ok("Ollama is installed and running")
+            else:
+                ok("Ollama is installed")
+                info("Run 'ollama serve' to start the local model server when needed.")
+        except Exception:
+            ok("Ollama is installed")
+            info("Run 'ollama serve' to start the local model server when needed.")
+        return
+
+    warn("Ollama not found on this system.")
+    info("Ollama enables free local AI inference — no API key required.")
+    info("You can skip this and use a cloud provider (OpenAI / Gemini / Anthropic) instead.")
+    print()
+
+    try:
+        raw = input(f"  {C.YELLOW}Install Ollama now? [Y/n]: {C.RESET}").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        info("Skipping Ollama install.")
+        return
+
+    if raw in ("n", "no"):
+        info("Skipping. Install later from https://ollama.com")
+        return
+
+    _install_ollama()
+
+
+def _install_ollama():
+    os_name = platform.system()
+
+    if os_name == "Linux":
+        info("Installing Ollama via official install script…")
+        r = subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
+        if r.returncode == 0:
+            ok("Ollama installed")
+            info("Start it with: ollama serve")
+        else:
+            warn("Install script failed. Visit https://ollama.com for manual instructions.")
+
+    elif os_name == "Darwin":
+        if shutil.which("brew"):
+            info("Installing Ollama via Homebrew…")
+            r = subprocess.run(["brew", "install", "ollama"], check=False)
+            if r.returncode == 0:
+                ok("Ollama installed via Homebrew")
+                info("Start it with: ollama serve")
+                return
+        # Fallback: download .zip containing Ollama.app
+        info("Downloading Ollama for macOS…")
+        tmp = Path(tempfile.mktemp(suffix=".zip"))
+        try:
+            urllib.request.urlretrieve(_OLLAMA_MAC_URL, tmp, _make_dl_hook("Ollama"))
+            print()
+            info("Extracting Ollama.app to /Applications…")
+            with zipfile.ZipFile(tmp) as z:
+                z.extractall("/Applications")
+            ok("Ollama.app installed — launch it from Applications or run: open /Applications/Ollama.app")
+        except Exception as e:
+            warn(f"Download failed: {e}  — install manually from https://ollama.com")
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    elif os_name == "Windows":
+        info("Downloading Ollama installer for Windows…")
+        tmp = Path(tempfile.mktemp(suffix=".exe"))
+        try:
+            urllib.request.urlretrieve(_OLLAMA_WIN_URL, tmp, _make_dl_hook("Ollama"))
+            print()
+            info("Running Ollama installer…")
+            r = subprocess.run([str(tmp), "/SILENT"], check=False)
+            if r.returncode == 0:
+                ok("Ollama installed")
+                # Refresh PATH so 'ollama' is visible in this session
+                try:
+                    import winreg
+                    for hive, sub in [
+                        (winreg.HKEY_LOCAL_MACHINE,
+                         r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                        (winreg.HKEY_CURRENT_USER, r"Environment"),
+                    ]:
+                        try:
+                            with winreg.OpenKey(hive, sub) as k:
+                                v, _ = winreg.QueryValueEx(k, "Path")
+                                os.environ["PATH"] = v + os.pathsep + os.environ.get("PATH", "")
+                        except Exception:
+                            pass
+                except ImportError:
+                    pass
+            else:
+                warn(f"Installer exited with code {r.returncode}. "
+                     "Install manually from https://ollama.com")
+        except Exception as e:
+            warn(f"Could not install Ollama: {e}  — install from https://ollama.com")
+        finally:
+            tmp.unlink(missing_ok=True)
+    else:
+        warn(f"Auto-install not supported on {os_name}. Visit https://ollama.com")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  MAIN ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
-TOTAL_STEPS = 6
+TOTAL_STEPS = 7
 
 def setup():
     banner()
@@ -829,6 +1116,8 @@ def setup():
     install_dependencies(sys_info)
     section(6, TOTAL_STEPS, "Setting Up Configuration")
     ensure_env_file()
+    section(7, TOTAL_STEPS, "Checking Ollama (Local AI Engine)")
+    ensure_ollama()
     print(f"\n{C.BOLD}{C.MAGENTA}  Verifying installation…{C.RESET}")
     all_ok = verify_install(sys_info)
     print(f"\n{C.GREEN}{C.BOLD}╔══════════════════════════════════════════════════════════╗\n║                  Setup Complete!  🎉                     ║\n╚══════════════════════════════════════════════════════════╝{C.RESET}")

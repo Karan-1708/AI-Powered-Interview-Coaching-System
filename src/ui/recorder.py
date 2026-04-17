@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import os
 from src.utils.diagnostics import get_logger
+from src.utils.file_manager import FileManager
 
 logger = get_logger()
 
@@ -26,13 +27,13 @@ def record_audio(key="interview_recorder"):
             
             # Safe Directory Creation
             try:
-                os.makedirs("temp_data", exist_ok=True)
+                os.makedirs(FileManager.TEMP_DIR, exist_ok=True)
             except OSError as e:
                 st.error(f"Failed to create directory: {e}")
                 logger.error(f"Directory creation failed: {e}")
                 return None
 
-            save_path = os.path.join("temp_data", f"recording_{timestamp}.wav")
+            save_path = os.path.join(FileManager.TEMP_DIR, f"recording_{timestamp}.wav")
             
             # Safe File Writing
             try:
