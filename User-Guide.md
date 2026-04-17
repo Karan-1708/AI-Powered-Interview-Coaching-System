@@ -1,5 +1,3 @@
-![Data Drifters Logo](./assets/Data-Drifters.png)
-
 # 📖 User Guide: AI Interview Coach
 
 Welcome to the **AI Interview Coach**! This guide will help you get the application running on your computer with just a few clicks. Our system is designed to be "Zero-Config," meaning the setup scripts handle the technical details for you.

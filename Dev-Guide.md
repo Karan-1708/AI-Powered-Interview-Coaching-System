@@ -1,5 +1,3 @@
-Data Drifters Logo
-
 # 🛠️ Developer Guide: AI Interview Coach
 
 This guide is for developers who want to modify the source code, run tests, or integrate this system into a larger architecture.

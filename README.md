@@ -1,5 +1,3 @@
-Data Drifters Logo
-
 # 🎙️ AI-Powered Interview Coaching System
 
 ### *Master your next interview with a coach that never sleeps.*

@@ -1,4 +1,4 @@
-# Technical Documentation — AI Interview Coach
+# Technical Documentation — AI Powered Interview Coaching System
 > Data Drifters · Capstone Project
 
 ---
