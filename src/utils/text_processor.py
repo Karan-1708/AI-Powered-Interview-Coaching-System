@@ -1,9 +1,7 @@
-import json
 import re
-import ast
-import logging
+from src.utils.diagnostics import get_logger
 
-logger = get_logger = logging.getLogger("AI_Coach")
+logger = get_logger()
 
 def clean_llm_text(text):
     """Deep cleans LLM output from all formatting artifacts (JSON, lists, numbering)."""
@@ -49,8 +47,6 @@ def parse_file(uploaded_file):
         elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword"]:
             from docx import Document
             doc = Document(uploaded_file)
-            text = "\n".join([para.text for f in doc.paragraphs for para in [f]]) # Simplified para extraction
-            # Re-read: Document paragraphs are directly iterable
             text = "\n".join([para.text for para in doc.paragraphs])
             return text.strip() if text.strip() else None
             

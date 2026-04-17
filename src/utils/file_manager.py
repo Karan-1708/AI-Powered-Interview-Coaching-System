@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from src.utils.diagnostics import get_logger, safe_execute
 
@@ -63,7 +64,6 @@ class FileManager:
         """Loads API keys from a local persistent file."""
         key_file = os.path.join(cls.TEMP_DIR, "vault.json")
         if os.path.exists(key_file):
-            import json
             try:
                 with open(key_file, "r") as f:
                     return json.load(f)
@@ -76,6 +76,5 @@ class FileManager:
     def save_keys(cls, keys_dict):
         """Saves API keys to a local persistent file."""
         key_file = os.path.join(cls.TEMP_DIR, "vault.json")
-        import json
         with open(key_file, "w") as f:
             json.dump(keys_dict, f)

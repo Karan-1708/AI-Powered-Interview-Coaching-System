@@ -1,10 +1,9 @@
 import librosa
 import numpy as np
 import re
-import logging
-from src.utils.diagnostics import safe_execute
+from src.utils.diagnostics import get_logger, safe_execute
 
-logger = logging.getLogger("AI_Coach")
+logger = get_logger()
 
 class AcousticScorer:
     # --- CONSTANTS ---

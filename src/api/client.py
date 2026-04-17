@@ -147,6 +147,33 @@ class APIClient:
         )
 
     @staticmethod
+    def stream_response(system_prompt, user_message, chat_history, engine_config, resume_context="", job_context=""):
+        """Generator that streams text chunks from the LLM as they arrive."""
+        url = f"{APIClient.BASE_URL}/generate-response-stream"
+        payload = {
+            "system_prompt": system_prompt,
+            "user_message": user_message,
+            "chat_history": chat_history,
+            "provider": engine_config['provider'],
+            "model": engine_config['model'],
+            "compute_type": engine_config['compute'],
+            "api_key": engine_config.get('api_key'),
+            "resume_context": resume_context,
+            "job_context": job_context
+        }
+        try:
+            with requests.post(url, json=payload, headers=APIClient._get_headers(), stream=True, timeout=60) as response:
+                if response.status_code == 200:
+                    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                        if chunk:
+                            yield chunk
+                else:
+                    yield f"API Error {response.status_code}: {response.text}"
+        except Exception as e:
+            logger.error(f"Stream Response Error: {e}")
+            yield f"[Connection error: {str(e)}]"
+
+    @staticmethod
     def generate_speech(text, voice="en-US-GuyNeural"):
         """Calls the TTS endpoint and returns the audio bytes."""
         url = f"{APIClient.BASE_URL}/generate-speech"

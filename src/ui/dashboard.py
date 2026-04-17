@@ -47,11 +47,11 @@ def render_final_analysis(session_data):
     ):
         with open(pdf_p, "rb") as f:
             st.download_button(
-                "📄 Download PDF Report", 
-                f.read(), 
-                f"Report_{session_data['job_title']}.pdf", 
-                "application/pdf", 
-                width='stretch'
+                "📄 Download PDF Report",
+                f.read(),
+                f"Report_{session_data['job_title']}.pdf",
+                "application/pdf",
+                use_container_width=True
             )
 
 def render_history_dashboard():
@@ -102,11 +102,11 @@ def render_history_dashboard():
                     markers=True, color_discrete_sequence=['#2980b9'])
     fig_wpm.add_hline(y=130, line_dash="dash", line_color="green", annotation_text="Ideal Start")
     fig_wpm.add_hline(y=160, line_dash="dash", line_color="green", annotation_text="Ideal End")
-    st.plotly_chart(fig_wpm, width='stretch')
-    
+    st.plotly_chart(fig_wpm, use_container_width=True)
+
     fig_fill = px.bar(df, x='timestamp', y='fillers', title='Filler Word Count per Session',
                     color_discrete_sequence=['#e74c3c'])
-    st.plotly_chart(fig_fill, width='stretch')
+    st.plotly_chart(fig_fill, use_container_width=True)
 
     with st.expander("📝 Detailed Session Logs"):
-        st.dataframe(df.sort_values(by='timestamp', ascending=False), width='stretch')
+        st.dataframe(df.sort_values(by='timestamp', ascending=False), use_container_width=True)

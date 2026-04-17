@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Load .env file if it exists
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -95,6 +95,9 @@ class ConnectionRequest(BaseModel):
 class SpeechRequest(BaseModel):
     text: str
     voice: Optional[str] = "en-US-GuyNeural"
+
+class PullModelRequest(BaseModel):
+    model: str
 
 # --- ENDPOINTS ---
 
@@ -183,6 +186,27 @@ def generate_response(request: LLMRequest):
         logger.error(f"Generate Response Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/generate-response-stream", dependencies=[Depends(verify_internal_key)], tags=["LLM"])
+def generate_response_stream(request: LLMRequest):
+    """Streams LLM response token by token for lower perceived latency."""
+    try:
+        llm = LLMClient(provider=request.provider, model_name=request.model,
+                        compute_type=request.compute_type, api_key=request.api_key)
+        context_instr = ""
+        if request.resume_context:
+            context_instr += f"\n[CONTEXT: RESUME]\n{request.resume_context}\n"
+        if request.job_context:
+            context_instr += f"\n[CONTEXT: JOB DESCRIPTION]\n{request.job_context}\n"
+        full_system_prompt = request.system_prompt + context_instr
+        history = [msg.dict() for msg in request.chat_history] if request.chat_history else []
+        return StreamingResponse(
+            llm.generate_response_stream(full_system_prompt, request.user_message, history),
+            media_type="text/plain"
+        )
+    except Exception as e:
+        logger.error(f"Generate Response Stream Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/generate-questions", dependencies=[Depends(verify_internal_key)], tags=["LLM"])
 def generate_questions(request: QuestionRequest):
     """Specifically generates interview questions using full role and context metadata."""
@@ -228,8 +252,8 @@ def list_models():
     return {"models": []}
 
 @app.post("/pull-model", dependencies=[Depends(verify_internal_key)], tags=["Local Models"])
-def pull_model(request: dict):
-    model_name = request.get("model")
+def pull_model(request: PullModelRequest):
+    model_name = request.model
     ollama_host = "http://host.docker.internal:11434"
     for host in [os.getenv("OLLAMA_HOST"), "http://host.docker.internal:11434", "http://127.0.0.1:11434"]:
         try:
@@ -248,7 +272,7 @@ def pull_model(request: dict):
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 @app.post("/generate-speech", dependencies=[Depends(verify_internal_key)], tags=["TTS"])
-async def generate_speech(request: SpeechRequest):
+async def generate_speech(request: SpeechRequest, background_tasks: BackgroundTasks):
     """
     Generates an MP3 file from text using edge-tts with safety limits.
     """
@@ -281,7 +305,8 @@ async def generate_speech(request: SpeechRequest):
         
         if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
             raise Exception("Edge-TTS generated an empty or missing file.")
-            
+
+        background_tasks.add_task(FileManager.safe_delete_file, temp_path)
         return FileResponse(temp_path, media_type="audio/mpeg", filename=temp_filename)
         
     except Exception as e:

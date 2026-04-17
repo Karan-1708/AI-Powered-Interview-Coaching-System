@@ -5,6 +5,9 @@ from src.utils.diagnostics import get_logger, safe_execute
 import os
 import time
 import gc
+import shutil
+import librosa
+import numpy as np
 
 # --- DEFENSIVE IMPORT ---
 try:
@@ -102,10 +105,6 @@ class AudioProcessor:
 
     @safe_execute(default_val=(True, "Audio check failed"), log_msg="Silence Check Error")
     def check_for_silence(self, audio_path):
-        import librosa
-        import numpy as np
-        import shutil
-        
         if not shutil.which("ffmpeg"):
             logger.error("FFmpeg not found in system path. Audio processing will fail.")
             return True, "Error: FFmpeg is not installed on the server. Please install FFmpeg to process audio."
