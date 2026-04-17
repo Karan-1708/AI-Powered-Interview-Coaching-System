@@ -54,4 +54,4 @@ Works on our machine — good luck everywhere else.
 
 ---
 
-*Built by the Data Drifters Team.*
+*Built by the Data Drifters.*
