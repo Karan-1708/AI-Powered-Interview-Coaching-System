@@ -43,17 +43,25 @@ Our **`install.py`** script is designed to detect your hardware and configure th
   ```bash
     python install.py
   ```
-3. **What happens**: The script upgrades pip, uninstalls conflicting CPU versions of PyTorch, detects your OS/Hardware (Windows CUDA vs Apple Silicon vs Linux), installs the "Sweet Version" of the AI engine, downloads portable FFmpeg (on Windows), and sets up your `.env`.
+3. **What happens** (7 steps):
+   - Checks Python version (3.11–3.13). If none is found, auto-installs Python 3.12 via `winget` (Windows), Homebrew (macOS), or the system package manager (Linux), then relaunches itself.
+   - Checks whether Ollama is installed. If not, prompts you and installs it silently if you agree.
+   - Upgrades pip and uninstalls any conflicting CPU-only PyTorch builds.
+   - Detects OS/hardware (NVIDIA CUDA, Apple Silicon, CPU) and installs the correct PyTorch wheel index (`cu124` for Python ≥ 3.12, `cu121` for Python 3.11).
+   - Installs all `requirements.txt` dependencies.
+   - Downloads portable **FFmpeg** (Windows only).
+   - Creates `.env` from `.env.example` if it doesn't exist and generates a random `INTERNAL_API_KEY`.
 
 ### The Manual Way
 
 If you prefer total control:
 
-1. **Create venv**: `python -m venv .venv`
-2. **Activate venv**: `.venv\Scripts\Activate.ps1`
+1. **Create venv**: `python -m venv ai-venv`
+2. **Activate venv**: `ai-venv\Scripts\Activate.ps1` (Windows) or `source ai-venv/bin/activate` (Mac/Linux)
 3. **Install Engine**: Use the specific index for your hardware (refer to `install.py` logic for URL links).
 4. **Install Requirements**: `pip install -r requirements.txt`
 5. **Security**: Copy `.env.example` to `.env` and set your `INTERNAL_API_KEY`.
+6. **Optional — Pre-load API Keys**: Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` in `.env` and the app will load them on startup — no need to enter them in the UI every session.
 
 ---
 
@@ -70,6 +78,25 @@ uvicorn src.api.server:app --reload
 ```bash
 streamlit run app.py
 ```
+
+---
+
+## 🎭 Interviewer Personas
+
+Personas are defined in `src/backend/personas.py`. There are six:
+
+| Label | Routing Keywords |
+|---|---|
+| 🤝 Friendly HR | `hr`, `screen`, `phone`, `recruiter`, `initial` |
+| 🔬 Strict Tech Lead | `technical`, `system`, `code`, `design`, `architecture` |
+| 🎯 Behavioral Coach | `behavioral`, `behaviour`, `star`, `competency`, `situational` |
+| 🌱 Culture Fit | `culture`, `values`, `fit`, `team`, `peer`, `onsite` |
+| 🔥 Stress Interviewer | (default fallback) |
+| 🏛️ Executive Sponsor | `executive`, `vp`, `director`, `c-level`, `strategic`, `final` + senior seniority |
+
+Routing is handled by `Personas.get_interviewer_by_type(round_type, seniority)`. The resulting system prompt is further modulated by one of four **seniority modifiers** (Entry-Level → Executive) injected at the end of the base prompt via `get_interview_sys_prompt()`.
+
+To add a new persona: define a new dict with `label`, `icon`, `base_prompt`, and `recommended_mode` keys, then register it in `PERSONA_PROMPTS` and add its routing keywords to `get_interviewer_by_type`.
 
 ---
 
@@ -93,10 +120,20 @@ The backend logs detailed hardware info on startup. Look for:
 
 ## 🐳 Docker Deployment
 
-The system is fully containerized.
+The system is fully containerized with two services: `api` (FastAPI) and `ui` (Streamlit).
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-*Note: The containers automatically handle dependency installation for standard Linux/NVIDIA environments.*
+**Key details:**
+- **Base image**: `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime` (Ubuntu 22.04 — required for clean ffmpeg dependencies).
+- **Healthcheck**: The API service polls `GET /health` every 15 s with a 60 s `start_period` to allow faster-whisper models to load. The UI container will not start until the API passes its healthcheck (`depends_on: condition: service_healthy`).
+- **Secrets**: Neither container bakes in an `INTERNAL_API_KEY`. Drop a `.env` file next to `docker-compose.yml` before starting — it is loaded by both services via `env_file: required: false`.
+- **Volumes**: `./temp_data` and `./logs` are mounted into both containers so recordings and logs persist on the host.
+- **NVIDIA GPU passthrough**: The API service requests all available NVIDIA devices automatically via the `deploy.resources` block. Non-GPU hosts simply ignore this.
+
+```bash
+# Bring down and wipe volumes
+docker compose down -v
+```
