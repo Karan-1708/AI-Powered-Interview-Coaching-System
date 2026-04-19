@@ -3,7 +3,6 @@ import platform
 import logging
 import subprocess
 import shutil
-import re
 
 from src.utils.diagnostics import get_logger, safe_execute
 
@@ -20,7 +19,8 @@ class ResourceMonitor:
         # Initial call to seed cpu_percent
         try:
             psutil.cpu_percent(interval=None)
-        except Exception: pass
+        except Exception as e:
+            logger.debug(f"cpu_percent seed failed: {e}")
 
     @safe_execute(default_val=(None, 0, 0, 0), log_msg="GPU SMI Error")
     def _get_gpu_stats_via_smi(self):
@@ -95,9 +95,9 @@ class ResourceMonitor:
                         stats["vram_percent"] = int((used_res / total_res) * 100)
                     else:
                         stats["vram_percent"] = 0
-                    return stats # Success with torch
-            except Exception:
-                pass
+                    return stats  # Success with torch
+            except Exception as e:
+                logger.debug(f"Torch GPU stats failed, falling back to nvidia-smi: {e}")
 
         # 2. Fallback to nvidia-smi if torch failed or isn't available
         name, used, total, pct = self._get_gpu_stats_via_smi()

@@ -1,5 +1,5 @@
 import streamlit as st
-import ast
+import json
 import re
 from src.api.client import APIClient
 from src.backend.personas import Personas
@@ -77,7 +77,9 @@ def render_setup_wizard(w_n):
                         )
                         try:
                             m = re.search(r"\[.*\]", resp, re.DOTALL)
-                            rounds = ast.literal_eval(m.group()) if m else [resp]
+                            rounds = json.loads(m.group()) if m else [resp]
+                            if not isinstance(rounds, list):
+                                raise ValueError("Expected a JSON list")
                             st.session_state['rounds'] = [str(r).strip() for r in rounds if len(str(r)) < 150]
                         except Exception:
                             st.session_state['rounds'] = ["1. Initial Screen", "2. Technical Round", "3. Culture Fit", "4. Final Manager"]
@@ -101,11 +103,12 @@ def render_setup_wizard(w_n):
                             'job_title': role,
                             'industry': ind
                         })
-                        persona_cfg = Personas.get_interviewer_by_type(sel_r.split(" ")[0], sen)
+                        # Use the persona the user explicitly selected, not an auto-mapped one
+                        persona_cfg = Personas.PERSONA_PROMPTS[sel_p]
                         st.session_state['round_info'] = {
                             "meaning": persona_cfg['meaning'],
                             "persona": persona_cfg['persona'],
-                            "recommended_mode": "Balanced"
+                            "recommended_mode": persona_cfg.get('recommended_mode', 'Standard Interview')
                         }
                         q_resp = APIClient.generate_questions(
                             sen, role, ind, sel_r,
@@ -156,11 +159,14 @@ def render_interview_loop(info):
                     resume_context=st.session_state.get('resume_text', ""),
                     job_context=st.session_state.get('job_desc_text', "")
                 )
-            nxt = clean_llm_text(nxt)
-            trigger_voice(nxt)
-            st.session_state['chat_history'].append({"role": "assistant", "content": nxt})
-            st.session_state['rec_nonce'] += 1
-            st.rerun()
+            if not nxt:
+                st.error("⚠️ The AI coach did not return a response. Check your LLM connection and try again.")
+            else:
+                nxt = clean_llm_text(nxt)
+                trigger_voice(nxt)
+                st.session_state['chat_history'].append({"role": "assistant", "content": nxt})
+                st.session_state['rec_nonce'] += 1
+                st.rerun()
 
     if c_end.button("🛑 End Interview & Analyze", use_container_width=True):
         if audio_path:

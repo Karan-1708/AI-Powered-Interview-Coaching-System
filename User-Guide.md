@@ -63,4 +63,5 @@ This is the fastest way to get started. The startup scripts will automatically c
 
 ## 🔐 Privacy & Safety
 *   **Local Storage**: All recordings and transcripts stay on your machine in the `temp_data` folder.
+*   **Encrypted Key Storage**: Any API keys you enter in the app are saved to `vault.json` in encrypted form (AES-256). They are never stored as plain text on disk.
 *   **Instant Wipe**: Use the **"Delete All Data"** button in the "Danger Zone" to permanently erase everything.

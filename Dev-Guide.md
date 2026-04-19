@@ -11,6 +11,7 @@ The system is built as a decoupled **Client-Server** application:
 - **Backend (FastAPI)**: Manages AI heavy-lifting (Whisper, LLM routing, and acoustic scoring).
 - **Frontend (Streamlit)**: A reactive dashboard for audio recording, chat UI, and Plotly analytics.
 - **Acoustic Engine**: Uses `librosa` and `faster-whisper` for real-time speech-to-text and metric extraction.
+- **Ollama Resolver** (`src/utils/ollama_resolver.py`): Shared utility that probes candidate Ollama hosts and returns the first reachable one. Used by `llm_client.py`, `server.py`, and `main.py` — replaces previously triplicated probe loops.
 
 ---
 
@@ -68,8 +69,14 @@ If you prefer total control:
 ### Start Backend
 
 ```bash
-uvicorn src.api.server:app --reload
+# Production (default)
+uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+
+# Development — enables hot-reload (file watcher subprocess)
+ENV=development uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ```
+
+> **Note:** The server reads the `ENV` environment variable to decide whether to enable `reload=True`. Never run with `ENV=development` in a shared or deployed environment — it spawns a file-watcher subprocess and increases attack surface.
 
 ### Start Frontend
 
@@ -94,6 +101,8 @@ Personas are defined in `src/backend/personas.py`. There are six:
 
 Routing is handled by `Personas.get_interviewer_by_type(round_type, seniority)`. The resulting system prompt is further modulated by one of four **seniority modifiers** (Entry-Level → Executive) injected at the end of the base prompt via `get_interview_sys_prompt()`.
 
+> **Important — Persona selection vs auto-routing:** The interview info bar and system prompt read directly from `Personas.PERSONA_PROMPTS[sel_p]` using the user's explicit sidebar selection (`sel_p`). `get_interviewer_by_type()` is only used when auto-routing from a round name string is needed; it is **not** used to drive the active interview persona.
+
 To add a new persona: define a new dict with `label`, `icon`, `base_prompt`, and `recommended_mode` keys, then register it in `PERSONA_PROMPTS` and add its routing keywords to `get_interviewer_by_type`.
 
 ---
@@ -116,6 +125,23 @@ The backend logs detailed hardware info on startup. Look for:
 
 ---
 
+## 🔐 Security Model
+
+| Layer | Mechanism |
+|---|---|
+| Service-to-service auth | `X-Internal-Key` header; all endpoints require it via `Depends(verify_internal_key)` |
+| CORS | Restricted to origins in `ALLOWED_ORIGINS` env var (default: `localhost:8501` only) |
+| Rate limiting | `slowapi` per-IP limits — 10 req/min on `/process-audio`, 60 req/min on `/generate-response`, 120 req/min on `/health` |
+| API key storage | Fernet-encrypted `vault.json` (AES-128-CBC + HMAC-SHA256). Key derived from `INTERNAL_API_KEY` via SHA-256 → base64url |
+| Prompt injection | User-supplied resume/JD content is HTML-escaped and wrapped in XML delimiters (`<resume>`, `<job_description>`) before LLM injection |
+| File upload | Audio uploads capped at 50 MB; random timestamped filenames prevent collisions |
+| Cloud provider auth | API keys sent in request headers (`Authorization`, `x-goog-api-key`) — never in URL query parameters |
+| Hot reload | `reload=True` only when `ENV=development`; defaults to `False` in production |
+
+> **Intern note:** `vault.json` stores your provider API keys encrypted at rest. The encryption key is derived from `INTERNAL_API_KEY` in `.env` — keep that file out of version control.
+
+---
+
 ## 🐳 Docker Deployment
 
 The system is fully containerized with two services: `api` (FastAPI) and `ui` (Streamlit).
@@ -126,8 +152,10 @@ docker compose up --build
 
 **Key details:**
 - **Base image**: `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime` (Ubuntu 22.04 — required for clean ffmpeg dependencies).
+- **Non-root containers**: Both `Dockerfile.api` and `Dockerfile.ui` create a non-privileged `appuser` and switch to it before starting the process (`USER appuser`). This limits blast radius if a container is ever compromised.
 - **Healthcheck**: The API service polls `GET /health` every 15 s with a 60 s `start_period` to allow faster-whisper models to load. The UI container will not start until the API passes its healthcheck (`depends_on: condition: service_healthy`).
 - **Secrets**: Neither container bakes in an `INTERNAL_API_KEY`. Drop a `.env` file next to `docker-compose.yml` before starting — it is loaded by both services via `env_file: required: false`.
+- **CORS in Docker**: The `api` service has `ALLOWED_ORIGINS=http://localhost:8501,http://127.0.0.1:8501` set in `docker-compose.yml`. Override this with your actual frontend URL for hosted deployments.
 - **Volumes**: `./temp_data` and `./logs` are mounted into both containers so recordings and logs persist on the host.
 - **NVIDIA GPU passthrough**: The API service requests all available NVIDIA devices automatically via the `deploy.resources` block. Non-GPU hosts simply ignore this.
 

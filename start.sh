@@ -240,7 +240,7 @@ fi
 # ============================================================
 #  PHASE 5 — Launch Streamlit frontend (foreground)
 # ============================================================
-section 4 $TOTAL "Launching Dashboard"
+section 5 $TOTAL "Launching Dashboard"
 
 echo ""
 ok "Opening AI Interview Coach in your browser..."

@@ -17,16 +17,17 @@ class HardwareInfo:
         self.os_name = platform.system()
         try:
             self.cpu_info = cpuinfo.get_cpu_info().get('brand_raw', 'Unknown CPU')
-        except:
+        except Exception:
             self.cpu_info = "Unknown CPU"
-        
+
         # 1. NVIDIA Check
         self.has_nvidia = TORCH_AVAILABLE and torch.cuda.is_available()
         if not self.has_nvidia and shutil.which("nvidia-smi"):
             try:
                 subprocess.check_output("nvidia-smi -L", shell=True)
-                self.has_nvidia = True 
-            except: pass
+                self.has_nvidia = True
+            except Exception:
+                pass
 
         # 2. Apple Silicon Check
         self.is_apple_silicon = False

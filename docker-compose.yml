@@ -12,6 +12,7 @@ services:
         required: false
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
+      - ALLOWED_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
     volumes:
       - ./temp_data:/app/temp_data
       - ./logs:/app/logs
