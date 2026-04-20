@@ -9,6 +9,7 @@ env/
 venv/
 build/
 dist/
+.pytest_cache/
 
 # --- Project Specific Data ---
 temp_data/
@@ -36,5 +37,4 @@ bin/
 
 # --- Personal Files ---
 commands.txt
-template.txt
-class/
+context.md

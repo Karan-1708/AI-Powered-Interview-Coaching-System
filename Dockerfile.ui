@@ -25,4 +25,7 @@ HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
 LABEL project="Data Drifters AI Coach"
 LABEL component="Streamlit Frontend"
 
+RUN adduser --disabled-password --gecos '' appuser
+USER appuser
+
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -1,10 +1,10 @@
 import os
 import base64
 import traceback
-import requests
 import streamlit as st
 
 from src.utils.diagnostics import get_logger, log_system_info
+from src.utils.ollama_resolver import resolve_ollama_host
 from src.api.client import APIClient
 from src.utils.file_manager import FileManager
 from src.utils.history import HistoryManager
@@ -74,11 +74,9 @@ def main():
         w_n = st.session_state['wipe_nonce']
 
         if 'default_provider' not in st.session_state:
-            try:
-                res = requests.get("http://127.0.0.1:11434/api/tags", timeout=1)
-                st.session_state['default_provider'] = "Ollama (Local)" if res.status_code == 200 else "Google Gemini"
-            except Exception:
-                st.session_state['default_provider'] = "Google Gemini"
+            candidates = [os.getenv("OLLAMA_HOST"), "http://127.0.0.1:11434", "http://localhost:11434"]
+            host = resolve_ollama_host([h for h in candidates if h])
+            st.session_state['default_provider'] = "Ollama (Local)" if host else "Google Gemini"
 
         if 'saved_keys' not in st.session_state:
             st.session_state['saved_keys'] = FileManager.load_saved_keys()

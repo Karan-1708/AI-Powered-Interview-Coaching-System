@@ -21,15 +21,9 @@ class LLMClient:
             if env_host:
                 self.ollama_host = env_host
             else:
-                # Probing defaults only when necessary
-                working_host = "http://127.0.0.1:11434"
-                for host in ["http://host.docker.internal:11434", "http://127.0.0.1:11434", "http://localhost:11434"]:
-                    try:
-                        if requests.get(f"{host}/api/tags", timeout=1).status_code == 200:
-                            working_host = host
-                            break
-                    except: continue
-                self.ollama_host = working_host
+                from src.utils.ollama_resolver import resolve_ollama_host
+                candidates = ["http://host.docker.internal:11434", "http://127.0.0.1:11434", "http://localhost:11434"]
+                self.ollama_host = resolve_ollama_host(candidates) or "http://127.0.0.1:11434"
         else:
             self.ollama_host = None
         
@@ -70,8 +64,8 @@ class LLMClient:
             try:
                 # --- GOOGLE GEMINI ---
                 if "gemini" in p_name or "google" in p_name:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-                    res = requests.get(url, timeout=10)
+                    url = "https://generativelanguage.googleapis.com/v1beta/models"
+                    res = requests.get(url, headers={"x-goog-api-key": self.api_key}, timeout=10)
                     if res.status_code == 200:
                         return True, f"🟢 Gemini API verified."
                     return False, "🔴 Gemini API Key is incorrect or invalid. Please check your Google AI Studio dashboard."
@@ -153,8 +147,9 @@ class LLMClient:
         return f"Ollama Error: {response.text}"
 
     def _generate_gemini(self, system, user, history):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-        
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
+        _gemini_headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
+
         contents = []
         for msg in history:
             role = "model" if msg["role"] == "assistant" else "user"
@@ -168,14 +163,14 @@ class LLMClient:
             "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000}
         }
         
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, headers=_gemini_headers, json=payload, timeout=30)
         if response.status_code != 200:
             try:
                 err = response.json().get('error', {}).get('message', 'Unknown Error')
-            except:
+            except Exception:
                 err = response.text
             return f"Gemini API Error {response.status_code}: {err}"
-        
+
         try:
             return response.json()["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError):
@@ -217,7 +212,7 @@ class LLMClient:
         
         try:
             err = response.json().get('error', {}).get('message', 'Unknown error')
-        except:
+        except Exception:
             err = response.text
         return f"OpenAI Error {response.status_code}: {err}"
 
@@ -248,7 +243,7 @@ class LLMClient:
         
         try:
             err = response.json().get('error', {}).get('message', 'Unknown error')
-        except:
+        except Exception:
             err = response.text
         
         if response.status_code == 404:
@@ -297,14 +292,15 @@ class LLMClient:
                         yield data.get("message", {}).get("content", "")
 
     def _stream_gemini(self, system, user, history):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent?alt=sse&key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:streamGenerateContent?alt=sse"
+        _gemini_headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
         contents = []
         for msg in history:
             role = "model" if msg["role"] == "assistant" else "user"
             contents.append({"role": role, "parts": [{"text": msg["content"]}]})
         contents.append({"role": "user", "parts": [{"text": f"SYSTEM INSTRUCTION: {system}\n\nUSER MESSAGE: {user}"}]})
         payload = {"contents": contents, "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000}}
-        with requests.post(url, json=payload, stream=True, timeout=30) as response:
+        with requests.post(url, headers=_gemini_headers, json=payload, stream=True, timeout=30) as response:
             for line in response.iter_lines():
                 if line:
                     line = line.decode("utf-8")

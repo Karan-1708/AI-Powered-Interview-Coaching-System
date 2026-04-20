@@ -1,5 +1,3 @@
-Data Drifters Logo
-
 # 🎙️ AI-Powered Interview Coaching System
 
 ### *Master your next interview with a coach that never sleeps.*
@@ -42,6 +40,7 @@ For more detailed information, please refer to our dedicated guides:
 - **[User Guide](User-Guide.md)**: Perfect for non-technical users. Covers one-click setup, interview steps, and feature usage.
 - **[Developer Guide](Dev-Guide.md)**: For technical users. Covers manual installation, API architecture, and automated setup via `install.py`.
 - **[Technical Documentation](DOCUMENTATION.md)**: A deep dive into the system architecture, AI engines, and internal security protocols.
+- **[Future Plans](Future-Plans.md)**: A look at what's coming next — upcoming features and improvements on the roadmap.
 
 ---
 
@@ -49,10 +48,10 @@ For more detailed information, please refer to our dedicated guides:
 
 This project was built with ❤️ by developers figuring it out one bug 🐛 at a time — firm believers that “it works on my machine” is a perfectly valid deployment strategy, while still trying to ship something genuinely useful (and only *slightly* break production in the process).
 
-Huge thanks to ***Gemini*** for carrying 90% of the workload, tolerating our bugs, not rage-quitting like a real developer would, and never once asking “have you tried Googling it?".
+Huge thanks to ***Gemini & Claude*** for carrying 90% of the workload, tolerating our bugs, not rage-quitting like a real developer would, and never once asking “have you tried Googling it?".
 
 Works on our machine — good luck everywhere else.
 
 ---
 
-*Built by the Data Drifters Team.*
+*Built by the Data Drifters.*

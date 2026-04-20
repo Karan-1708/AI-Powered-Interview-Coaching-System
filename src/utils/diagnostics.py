@@ -16,16 +16,20 @@ def setup_environment():
     if os.path.exists(local_bin) and local_bin not in os.environ["PATH"]:
         os.environ["PATH"] = local_bin + os.pathsep + os.environ["PATH"]
         if hasattr(os, "add_dll_directory"):
-            try: os.add_dll_directory(local_bin)
-            except: pass
+            try:
+                os.add_dll_directory(local_bin)
+            except Exception:
+                pass
 
     if platform.system() == "Windows":
         try:
             import site
             # 1. Collect potential base paths
             possible_paths = site.getsitepackages()
-            try: possible_paths.append(site.getusersitepackages())
-            except: pass
+            try:
+                possible_paths.append(site.getusersitepackages())
+            except Exception:
+                pass
             
             # Add current environment and typical conda locations
             possible_paths.append(sys.prefix)
@@ -59,8 +63,10 @@ def setup_environment():
                 if hasattr(os, "add_dll_directory"):
                     try:
                         os.add_dll_directory(sd)
-                    except Exception: pass
-        except Exception: pass
+                    except Exception as e:
+                        logging.getLogger("AI_Coach").debug(f"add_dll_directory failed for {sd}: {e}")
+        except Exception as e:
+            logging.getLogger("AI_Coach").debug(f"DLL path setup error: {e}", exc_info=True)
 
 # Run this once on import to ensure the environment is ready
 setup_environment()
@@ -76,7 +82,7 @@ logger.setLevel(logging.INFO)
 # Prevent adding multiple handlers if the module is reloaded
 if not logger.handlers:
     # 1. File Handler
-    file_handler = logging.FileHandler(os.path.join(log_dir, "app_debug.log"), mode="w", encoding="utf-8")
+    file_handler = logging.FileHandler(os.path.join(log_dir, "app_debug.log"), mode="a", encoding="utf-8")
     file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
@@ -87,7 +93,8 @@ if not logger.handlers:
         console_formatter = logging.Formatter("%(levelname)s: %(message)s")
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
-    except Exception: pass
+    except Exception as e:
+        logger.warning(f"Console logging handler setup failed: {e}")
 
 def log_system_info():
     """Logs critical system stats on startup."""
