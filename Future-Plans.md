@@ -74,6 +74,20 @@ Generic interview questions only get you so far. The most memorable candidates w
 
 ---
 
+## 🧠 User Memory & Session Continuity
+
+*"Pick up right where you left off."*
+
+Right now every interview session starts cold. The **User Memory & Session Continuity** feature changes that — after your first full interview the system knows who you are, and every session after that builds on the last.
+
+- After completing a first full interview, the system creates a persistent user profile that stores your performance history, recurring weak spots, and progress over time.
+- On return sessions, the interviewer can reference your past answers — calling out improvement ("Last time you struggled with pacing — much better today") or re-testing areas you underperformed in.
+- Session context is stored locally and tied to your profile, so continuity is opt-in, private, and never requires an account or cloud sync.
+
+**Tech:** Persistent user profile serialised to a local JSON/SQLite store; session summaries written at end of `interview.py` flow and loaded at session start to inject prior-context into the system prompt via the `/generate-questions` and `/generate-response` endpoints.
+
+---
+
 ## 💡 A Note on the Roadmap
 
 These aren't vague ideas on a whiteboard — they're the natural next layer of a system we've already built carefully from the ground up. Each feature extends what's already there rather than rebuilding it.
